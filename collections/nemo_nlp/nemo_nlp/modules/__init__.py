@@ -1,4 +1,4 @@
 from .classifiers import *
 from .losses import *
-from .sgd_modules import *
+from .sgd import sgd_modules, sgd_model
 from .transformer_nm import *

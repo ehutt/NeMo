@@ -3,6 +3,7 @@ from torch import nn
 
 
 from nemo.backends.pytorch.nm import LossNM
+from nemo.backends.pytorch.common.losses import CrossEntropyLoss
 from nemo.core.neural_types import *
 from .pytorch_utils import SmoothedCrossEntropyLoss
 from ..utils.nlp_utils import mask_padded_tokens
@@ -547,18 +548,44 @@ class SGDDialogueStateLoss(LossNM):
             1: AxisType(TimeTag)
         """
         return {
-            "logits": NeuralType({
-                0: AxisType(BatchTag),
-                1: AxisType(ChannelTag)
-            }),
-            # "labels": NeuralType({
-            #     0: AxisType(BatchTag),
-            #     1: AxisType(TimeTag)
-            # }),
-            # "loss_mask": NeuralType({
-            #     0: AxisType(BatchTag),
-            #     1: AxisType(TimeTag)
-            # })
+           "logit_intent_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_req_slot_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_cat_slot_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_cat_slot_value": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_noncat_slot_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_noncat_slot_start": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_noncat_slot_end": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "label_intent_status": NeuralType({
+               0: AxisType(BatchTag)
+           })
         }
 
     @property
@@ -580,5 +607,130 @@ class SGDDialogueStateLoss(LossNM):
         # self._criterion = nn.CrossEntropyLoss(weight=class_weights)
         # self.num_classes = num_classes
 
-    def _loss_function(self, logits):
-        return sum(logits.view(-1))
+    def _loss_function(self,
+                      logit_intent_status,
+                      logit_req_slot_status,
+                      logit_cat_slot_status,
+                      logit_cat_slot_value,
+                      logit_noncat_slot_status,
+                      logit_noncat_slot_start,
+                      logit_noncat_slot_end,
+                      label_intent_status):
+        """
+        Obtain the loss of the model
+        """
+        
+        """
+        Intents:
+            logit_intent_status Shape: (batch_size, max_num_intents + 1)
+            intent_status (labels) Shape: (batch_size, max_num_intents) - one-hot encoded
+        """
+        return sum(logit_intent_status.view(-1))
+    
+#        # Add label corresponding to NONE intent.
+#        num_active_intents = torch.sum(intent_status, axis=1)
+#        none_intent_label = torch.ones(num_active_intents.size()) - num_active_intents
+#        # Shape: (batch_size, max_num_intents + 1).
+#        onehot_intent_labels = torch.cat([none_intent_label, intent_status], axis=1)
+#        
+#        # use indices for intent labels - tf uses one_hot_encoding
+#        intent_labels = onehot_intent_labels.max(dim=0)
+#        intent_loss = CrossEntropyLoss(logits=logit_intent_status,
+#                                       labels=intent_labels)
+#        
+#        return intent_loss
+#        # Requested slots.
+#        # Shape: (batch_size, max_num_slots).
+#        requested_slot_logits = outputs["logit_req_slot_status"]
+#        requested_slot_labels = features["req_slot_status"]
+#        max_num_requested_slots = requested_slot_labels.get_shape().as_list()[-1]
+#        weights = tf.sequence_mask(
+#            features["req_slot_num"], maxlen=max_num_requested_slots)
+#        # Sigmoid cross entropy is used because more than one slots can be requested
+#        # in a single utterance.
+#        requested_slot_loss = tf.losses.sigmoid_cross_entropy(
+#            requested_slot_labels, requested_slot_logits, weights=weights)
+#    
+#        # Categorical slot status.
+#        # Shape: (batch_size, max_num_cat_slots, 3).
+#        cat_slot_status_logits = outputs["logit_cat_slot_status"]
+#        cat_slot_status_labels = features["cat_slot_status"]
+#        max_num_cat_slots = cat_slot_status_labels.get_shape().as_list()[-1]
+#        one_hot_labels = tf.one_hot(cat_slot_status_labels, 3, dtype=tf.int32)
+#        cat_weights = tf.sequence_mask(
+#            features["cat_slot_num"], maxlen=max_num_cat_slots, dtype=tf.float32)
+#        cat_slot_status_loss = tf.losses.softmax_cross_entropy(
+#            tf.reshape(one_hot_labels, [-1, 3]),
+#            tf.reshape(cat_slot_status_logits, [-1, 3]),
+#            weights=tf.reshape(cat_weights, [-1]))
+#    
+#        # Categorical slot values.
+#        # Shape: (batch_size, max_num_cat_slots, max_num_slot_values).
+#        cat_slot_value_logits = outputs["logit_cat_slot_value"]
+#        cat_slot_value_labels = features["cat_slot_value"]
+#        max_num_slot_values = cat_slot_value_logits.get_shape().as_list()[-1]
+#        one_hot_labels = tf.one_hot(
+#            cat_slot_value_labels, max_num_slot_values, dtype=tf.int32)
+#        # Zero out losses for categorical slot value when the slot status is not
+#        # active.
+#        cat_loss_weight = tf.cast(
+#            tf.equal(cat_slot_status_labels, data_utils.STATUS_ACTIVE), tf.float32)
+#        cat_slot_value_loss = tf.losses.softmax_cross_entropy(
+#            tf.reshape(one_hot_labels, [-1, max_num_slot_values]),
+#            tf.reshape(cat_slot_value_logits, [-1, max_num_slot_values]),
+#            weights=tf.reshape(cat_weights * cat_loss_weight, [-1]))
+#    
+#        # Non-categorical slot status.
+#        # Shape: (batch_size, max_num_noncat_slots, 3).
+#        noncat_slot_status_logits = outputs["logit_noncat_slot_status"]
+#        noncat_slot_status_labels = features["noncat_slot_status"]
+#        max_num_noncat_slots = noncat_slot_status_labels.get_shape().as_list()[-1]
+#        one_hot_labels = tf.one_hot(noncat_slot_status_labels, 3, dtype=tf.int32)
+#        noncat_weights = tf.sequence_mask(
+#            features["noncat_slot_num"],
+#            maxlen=max_num_noncat_slots,
+#            dtype=tf.float32)
+#        # Logits for padded (invalid) values are already masked.
+#        noncat_slot_status_loss = tf.losses.softmax_cross_entropy(
+#            tf.reshape(one_hot_labels, [-1, 3]),
+#            tf.reshape(noncat_slot_status_logits, [-1, 3]),
+#            weights=tf.reshape(noncat_weights, [-1]))
+#    
+#        # Non-categorical slot spans.
+#        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).
+#        span_start_logits = outputs["logit_noncat_slot_start"]
+#        span_start_labels = features["noncat_slot_value_start"]
+#        max_num_tokens = span_start_logits.get_shape().as_list()[-1]
+#        onehot_start_labels = tf.one_hot(
+#            span_start_labels, max_num_tokens, dtype=tf.int32)
+#        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).
+#        span_end_logits = outputs["logit_noncat_slot_end"]
+#        span_end_labels = features["noncat_slot_value_end"]
+#        onehot_end_labels = tf.one_hot(
+#            span_end_labels, max_num_tokens, dtype=tf.int32)
+#        # Zero out losses for non-categorical slot spans when the slot status is not
+#        # active.
+#        noncat_loss_weight = tf.cast(
+#            tf.equal(noncat_slot_status_labels, data_utils.STATUS_ACTIVE),
+#            tf.float32)
+#        span_start_loss = tf.losses.softmax_cross_entropy(
+#            tf.reshape(onehot_start_labels, [-1, max_num_tokens]),
+#            tf.reshape(span_start_logits, [-1, max_num_tokens]),
+#            weights=tf.reshape(noncat_weights * noncat_loss_weight, [-1]))
+#        span_end_loss = tf.losses.softmax_cross_entropy(
+#            tf.reshape(onehot_end_labels, [-1, max_num_tokens]),
+#            tf.reshape(span_end_logits, [-1, max_num_tokens]),
+#            weights=tf.reshape(noncat_weights * noncat_loss_weight, [-1]))
+#    
+#        losses = {
+#            "intent_loss": intent_loss,
+#            "requested_slot_loss": requested_slot_loss,
+#            "cat_slot_status_loss": cat_slot_status_loss,
+#            "cat_slot_value_loss": cat_slot_value_loss,
+#            "noncat_slot_status_loss": noncat_slot_status_loss,
+#            "span_start_loss": span_start_loss,
+#            "span_end_loss": span_end_loss,
+#        }
+#        for loss_name, loss in losses.items():
+#          tf.summary.scalar(loss_name, loss)
+#        return sum(losses.values()) / len(losses)

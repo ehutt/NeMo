@@ -71,7 +71,6 @@ class SGDDataset(Dataset):
     def __getitem__(self, idx):
         ex = self.features[idx]
         service_id = ex.service_schema.service_id
-
         return (#np.array(ex.example_id),
                 np.array(ex.is_real_example),
                 np.array(service_id),
@@ -96,7 +95,7 @@ class SGDDataset(Dataset):
                 np.array(self.schema_data_dict['cat_slot_value_emb'][service_id]),
                 np.array(self.schema_data_dict['noncat_slot_emb'][service_id]),
                 np.array(self.schema_data_dict['req_slot_emb'][service_id]),
-                np.array(self.schema_data_dict['intent_emb'][service_id]))
+                np.array(self.schema_data_dict['intent_emb'][service_id], dtype=np.float32))
 
         """
         [('cat_slot_emb', (6, 768)),

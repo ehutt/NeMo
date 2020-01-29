@@ -58,6 +58,7 @@ class Logits(nn.Module):
         repeat_utterance_embedding = utterance_embedding.repeat(1,
                                                                 num_elements,
                                                                 1)
+        import pdb; pdb.set_trace()
         utterance_element_emb = torch.cat([repeat_utterance_embedding,
                                            element_embeddings], axis = 2)
         logits = self.layer1(utterance_element_emb)
@@ -66,9 +67,115 @@ class Logits(nn.Module):
         return logits
 
 
-class SGDModel(nn.Module):
+class SGDModel(TrainableNM):
+    """
+    TODO
+    
+                  num_categorical_slot_values,
+
+                num_intents,
+    
+    """
+    @property
+    def input_ports(self):
+       return {
+            "encoded_utterance": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+            "token_embeddings": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag),
+                2: AxisType(ChannelTag)
+            }),
+            "utterance_mask": NeuralType({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+            "num_categorical_slot_values": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+            "num_intents": NeuralType ({
+                0:AxisType(BatchTag)
+            }),
+            "cat_slot_emb": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag),
+                2: AxisType(ChannelTag)
+            }),
+            "cat_slot_value_emb": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag),
+                2: AxisType(ChannelTag),
+                3: AxisType(ChannelTag)
+            }),
+            "noncat_slot_emb": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag),
+                2: AxisType(ChannelTag)
+            }),
+            "req_slot_emb": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag),
+                2: AxisType(ChannelTag)
+            }),
+            "intent_embeddings": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag),
+                2: AxisType(ChannelTag)
+            })
+          }
+
+    @property
+    def output_ports(self):
+        """Returns definitions of module output ports.
+
+        hidden_states:
+            0: AxisType(BatchTag)
+
+            1: AxisType(TimeTag)
+
+            2: AxisType(ChannelTag)
+        """
+        return {
+           "logit_intent_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_req_slot_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_cat_slot_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_cat_slot_value": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_noncat_slot_status": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_noncat_slot_start": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
+           "logit_noncat_slot_end": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           })
+        }
     def __init__(self,
-                 num_classes,
                  embedding_dim):
         """Get logits for elements by conditioning on utterance embedding.
 
@@ -86,66 +193,66 @@ class SGDModel(nn.Module):
         super().__init__()
         
         # Add a trainable vector for the NONE intent
-        self.none_intent_vector = torch.empty((1, 1, embedding_dim), requires_grad=True)
+        self.none_intent_vector = torch.empty((1, 1, embedding_dim), requires_grad=True).to(self._device)
         # TODO truncated norm init
         nn.init.normal_(self.none_intent_vector, std=0.02)
-        self.none_intent_vector = torch.nn.Parameter(self.none_intent_vector)
-    
-        self.intent_layer = Logits(1, embedding_dim)
-        self.requested_slots_layer = Logits(1, embedding_dim)
-        
-        self.cat_slot_value_layer = Logits(1, embedding_dim)
+        self.none_intent_vector = torch.nn.Parameter(self.none_intent_vector).to(self._device)
+   
+        self.intent_layer = Logits(1, embedding_dim).to(self._device)
+        self.requested_slots_layer = Logits(1, embedding_dim).to(self._device)
+       
+        self.cat_slot_value_layer = Logits(1, embedding_dim).to(self._device)
 
         # Slot status values: none, dontcare, active.
-        self.cat_slot_status_layer = Logits(3, embedding_dim)
-        self.noncat_slot_layer = Logits(3, embedding_dim)
-        
+        self.cat_slot_status_layer = Logits(3, embedding_dim).to(self._device)
+        self.noncat_slot_layer = Logits(3, embedding_dim).to(self._device)
+       
         # dim 2 for non_categorical slot - to represent start and end position
-        self.noncat_layer1 = nn.Linear(2 * embedding_dim, embedding_dim)
+        self.noncat_layer1 = nn.Linear(2 * embedding_dim, embedding_dim).to(self._device)
         self.noncat_activation = torch.nn.functional.gelu
-        self.noncat_layer2 = nn.Linear(embedding_dim, 2)
+        self.noncat_layer2 = nn.Linear(embedding_dim, 2).to(self._device)
 
     def forward(self,
                 encoded_utterance,
-                intent_embeddings,
+                token_embeddings,
+                utterance_mask,
+                num_categorical_slot_values,
                 num_intents,
-                req_slot_emb,
                 cat_slot_emb,
                 cat_slot_value_emb,
-                num_categorical_slot_values,
-                utterance_mask,
-                token_embeddings,
-                noncat_slot_emb):
+                noncat_slot_emb,
+                req_slot_emb,
+                intent_embeddings):
         
         """
         encoded_utterance - [CLS] token hidden state from BERT encoding of the utterance
         
         """
         logit_intent_status = self._get_intents(encoded_utterance,
-                                                intent_embeddings,
-                                                num_intents)
-        
+                                               intent_embeddings,
+                                               num_intents)
+       
         logit_req_slot_status = self._get_requested_slots(encoded_utterance,
-                                                          req_slot_emb)
-        
+                                                         req_slot_emb)
+       
         logit_cat_slot_status, logit_cat_slot_value = self._get_categorical_slot_goals(encoded_utterance,
-                                                                           cat_slot_emb,
-                                                                           cat_slot_value_emb,
-                                                                           num_categorical_slot_values)
-        
-        logit_noncat_slot_status, logit_noncat_slot_start, logits_noncat_slot_end = \
-            self._get_noncategorical_slot_goals(encoded_utterance,
-            utterance_mask,
-            noncat_slot_emb,
-            token_embeddings)
+                                                                                      cat_slot_emb,
+                                                                                      cat_slot_value_emb,
+                                                                                      num_categorical_slot_values)
+       
+        logit_noncat_slot_status, logit_noncat_slot_start, logit_noncat_slot_end = \
+           self._get_noncategorical_slot_goals(encoded_utterance,
+           utterance_mask,
+           noncat_slot_emb,
+           token_embeddings)
 
-        return (logit_intent_status,
-                logit_req_slot_status,
-                logit_cat_slot_status,
-                logit_cat_slot_value,
-                logit_noncat_slot_status,
-                logit_noncat_slot_start,
-                logits_noncat_slot_end)
+        return  logit_intent_status,\
+                logit_req_slot_status,\
+                logit_cat_slot_status,\
+                logit_cat_slot_value,\
+                logit_noncat_slot_status,\
+                logit_noncat_slot_start,\
+                logit_noncat_slot_end
                 
     
     def _get_intents(self,
@@ -161,8 +268,8 @@ class SGDModel(nn.Module):
         batch_size, max_num_intents, _ = intent_embeddings.size()
         
         # Add a trainable vector for the NONE intent.
-        repeated_none_intent_vector = self.none_intent_vector.repeat(2,1,1)
-        intent_embeddings = torch.cat([repeated_none_intent_vector, intent_embedding], axis=1)
+        repeated_none_intent_vector = self.none_intent_vector.repeat(batch_size, 1, 1)
+        intent_embeddings = torch.cat([repeated_none_intent_vector, intent_embeddings], axis=1)
         
         logits = self.intent_layer(encoded_utterance, intent_embeddings)
         logits = logits.squeeze(axis=-1) # Shape: (batch_size, max_intents + 1)
@@ -177,15 +284,15 @@ class SGDModel(nn.Module):
                   logits,
                   max_length,
                   actual_length):
-        mask = torch.arange(0, max_length, 1) < torch.unsqueeze(actual_length, dim=-1)
-        negative_logits = -0.7 * torch.ones(logits.size()) * torch.finfo(logits.dtype).max
+        mask = torch.arange(0, max_length, 1).to(self._device) < torch.unsqueeze(actual_length, dim=-1)
+        negative_logits = -0.7 * torch.ones(logits.size()).to(self._device) * torch.finfo(logits.dtype).max
         return mask, negative_logits
     
     def _get_requested_slots(self,
                              encoded_utterance,
                              requested_slot_emb):
         """Obtain logits for requested slots."""
-        logits = self._get_logits(encoded_utterance, requested_slot_emb)
+        logits = self.requested_slots_layer(encoded_utterance, requested_slot_emb)
         return logits.squeeze(axis=-1)
     
     def _get_categorical_slot_goals(self,
@@ -215,7 +322,7 @@ class SGDModel(nn.Module):
         value_logits = value_logits.view(-1, max_num_slots, max_num_values)
 
         # Mask out logits for padded slots and values because they will be softmaxed
-        mask, negative_logits = self._get_mask(logits,
+        mask, negative_logits = self._get_mask(value_logits,
                                                max_num_values,
                                                num_categorical_slot_values)
         value_logits = torch.where(mask, value_logits, negative_logits)
@@ -260,37 +367,36 @@ class SGDModel(nn.Module):
         span_start_logits, span_end_logits = torch.unbind(span_logits, dim=3)
         return status_logits, span_start_logits, span_end_logits
 
-utter = torch.tensor([[[1.,2.,3., 4., 5]],[[7.,8.,9., 8., 5]]])
-num_classes = 1 # need to choose the most probable intent
-num_elements = 4 # max num of intents per service
-num_intents=torch.tensor([4, 2])
-       
-intent_embedding = torch.tensor([[[1., 1., 1., 1., 1.],
-                                 [2., 2., 2., 2., 2.],
-                                 [0., 0., 0., 0., 0.],
-                                 [0., 0., 0., 0., 0.]],
-                                [[1., 1., 1., 1., 1.],
-                                 [2., 2., 2., 2., 2.],
-                                 [0., 0., 0., 0., 0.],
-                                 [0., 0., 0., 0., 0.]]]) # 1, 4, 5
-    
-embedding_dim = utter.size()[-1]
-net = SGDModel(num_classes=num_classes,
-               embedding_dim=embedding_dim)
-print('\n\n', '#'*30)
-print(net)
-print('\n\n', '#'*30)
-logits = net(utter,
-             intent_embedding,
-             num_intents)
-print(logits)
-print('\n\n', '#'*30)
-params = list(net.parameters())
-
-
-for name, param in net.named_parameters():
-    print (name, param.data)
-
+#utter = torch.tensor([[[1.,2.,3., 4., 5]],[[7.,8.,9., 8., 5]]])
+#num_classes = 1 # need to choose the most probable intent
+#num_elements = 4 # max num of intents per service
+#num_intents=torch.tensor([4, 2])
+#       
+#intent_embedding = torch.tensor([[[1., 1., 1., 1., 1.],
+#                                 [2., 2., 2., 2., 2.],
+#                                 [0., 0., 0., 0., 0.],
+#                                 [0., 0., 0., 0., 0.]],
+#                                [[1., 1., 1., 1., 1.],
+#                                 [2., 2., 2., 2., 2.],
+#                                 [0., 0., 0., 0., 0.],
+#                                 [0., 0., 0., 0., 0.]]]) # 1, 4, 5
+#    
+#embedding_dim = utter.size()[-1]
+#net = SGDModel(num_classes=num_classes,
+#               embedding_dim=embedding_dim)
+#print('\n\n', '#'*30)
+#print(net)
+#print('\n\n', '#'*30)
+#logits = net(utter,
+#             intent_embedding,
+#             num_intents)
+#print(logits)
+#print('\n\n', '#'*30)
+#params = list(net.parameters())
+#
+#
+#for name, param in net.named_parameters():
+#    print (name, param.data)
 
 
 

@@ -20,7 +20,7 @@ from nemo_nlp.utils.callbacks.joint_intent_slot import \
     eval_iter_callback, eval_epochs_done_callback
 from nemo.utils.lr_policies import get_lr_policy
 
-from nemo_nlp.modules import sgd_modules
+from nemo_nlp.modules.sgd import sgd_modules, sgd_model
 
 # Parsing arguments
 parser = argparse.ArgumentParser(description='Schema_guided_dst')
@@ -167,19 +167,44 @@ input_data = train_datalayer()
 
 hidden_size = pretrained_bert_model.local_parameters["hidden_size"]
 
-# Encode the utterances using BERT.
-encoded_tokens = pretrained_bert_model(input_ids=input_data.utterance_ids,
-                                       attention_mask=input_data.utterance_mask,
-                                       token_type_ids=input_data.utterance_segment)
-
+# define model pipeline
 encoder_extractor = sgd_modules.Encoder(hidden_size=hidden_size,
                                         dropout=args.dropout)
-
-utterance_encoding = encoder_extractor(hidden_states=encoded_tokens)
-
-
 dst_loss = nemo_nlp.SGDDialogueStateLoss()
-loss = dst_loss(logits=utterance_encoding)
+
+
+# Encode the utterances using BERT.
+token_embeddings = pretrained_bert_model(input_ids=input_data.utterance_ids,
+                                         attention_mask=input_data.utterance_mask,
+                                         token_type_ids=input_data.utterance_segment)
+encoded_utterance = encoder_extractor(hidden_states=token_embeddings)
+model = sgd_model.SGDModel(embedding_dim=hidden_size)
+
+logit_intent_status,\
+logit_req_slot_status,\
+logit_cat_slot_status,\
+logit_cat_slot_value,\
+logit_noncat_slot_status,\
+logit_noncat_slot_start,\
+logit_noncat_slot_end = model(encoded_utterance=encoded_utterance,
+                        token_embeddings=token_embeddings,
+                        utterance_mask=input_data.utterance_mask,
+                        num_categorical_slot_values=input_data.num_categorical_slot_values,
+                        num_intents=input_data.num_intents,
+                        cat_slot_emb=input_data.cat_slot_emb,
+                        cat_slot_value_emb=input_data.cat_slot_value_emb,
+                        noncat_slot_emb=input_data.noncat_slot_emb,
+                        req_slot_emb=input_data.req_slot_emb,
+                        intent_embeddings=input_data.intent_emb)
+
+loss = dst_loss(logit_intent_status=logit_intent_status,
+                logit_req_slot_status=logit_req_slot_status,
+                logit_cat_slot_status=logit_cat_slot_status,
+                logit_cat_slot_value=logit_cat_slot_value,
+                logit_noncat_slot_status=logit_noncat_slot_status,
+                logit_noncat_slot_start=logit_noncat_slot_start,
+                logit_noncat_slot_end=logit_noncat_slot_end,
+                label_intent_status=input_data.intent_status)
 
 
 # intent_embeddings = input_data.intent_emb
@@ -197,9 +222,18 @@ loss = dst_loss(logits=utterance_encoding)
 # outputs["logit_noncat_slot_end"] = noncat_span_end
 
 
-train_tensors = loss
+train_tensors = [loss
+                 # logit_intent_status,
+                 # logit_req_slot_status,
+                 # logit_cat_slot_status,
+                 # logit_cat_slot_value,
+                 # logit_noncat_slot_status,
+                 # logit_noncat_slot_start,
+                 # logit_noncat_slot_end
+                 ]
+
 steps_per_epoch = len(train_datalayer) // (args.train_batch_size * args.num_gpus)
-print (steps_per_epoch, len(train_datalayer))
+
 # import pdb; pdb.set_trace()
 # Create trainer and execute training action
 train_callback = nemo.core.SimpleLossLoggerCallback(

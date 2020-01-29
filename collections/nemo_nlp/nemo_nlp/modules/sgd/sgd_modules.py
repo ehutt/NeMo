@@ -53,7 +53,7 @@ class Encoder(TrainableNM):
         return {
             "logits": NeuralType({
                 0: AxisType(BatchTag),
-                1: AxisType(ChannelTag)
+                1: AxisType(TimeTag)
             })
         }
 
@@ -82,5 +82,4 @@ class Encoder(TrainableNM):
         logits = self.fc(first_token_hidden_states)
         logits = self.activation(logits)
         logits = self.dropout(logits)
-        import pdb; pdb.set_trace()
         return logits
