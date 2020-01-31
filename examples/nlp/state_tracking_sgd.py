@@ -46,7 +46,7 @@ parser.add_argument("--dropout", default=0.1, type=float,
 parser.add_argument("--num_epochs", default=1, type=int,
                     help="Number of epochs for training")
 parser.add_argument("--optimizer_kind", default="adam", type=str)
-parser.add_argument("--train_batch_size", default=1, type=int,
+parser.add_argument("--train_batch_size", default=2, type=int,
                     help="Total batch size for training.")
 parser.add_argument("--eval_batch_size", default=8, type=int,
                     help="Total batch size for eval.")
@@ -155,7 +155,8 @@ train_datalayer = nemo_nlp.SGDDataLayer(
     overwrite_dial_file=args.overwrite_dial_file,
     shuffle=args.shuffle,
     dataset_split=args.dataset_split,
-    schema_emb_processor=schema_preprocessor)
+    schema_emb_processor=schema_preprocessor,
+    batch_size=args.train_batch_size)
 
 
 # fix
@@ -164,7 +165,7 @@ if not os.path.exists(bert_config):
     raise ValueError(f'bert_config.json not found at {args.bert_ckpt_dir}')
 
 input_data = train_datalayer()
-
+import pdb; pdb.set_trace()
 hidden_size = pretrained_bert_model.local_parameters["hidden_size"]
 
 # define model pipeline
@@ -204,7 +205,9 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
                 logit_noncat_slot_status=logit_noncat_slot_status,
                 logit_noncat_slot_start=logit_noncat_slot_start,
                 logit_noncat_slot_end=logit_noncat_slot_end,
-                label_intent_status=input_data.intent_status)
+                intent_status=input_data.intent_status,
+                requested_slot_status=input_data.requested_slot_status,
+                num_slots=input_data.num_slots)
 
 
 # intent_embeddings = input_data.intent_emb

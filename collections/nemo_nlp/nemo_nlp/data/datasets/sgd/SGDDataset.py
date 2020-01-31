@@ -91,10 +91,10 @@ class SGDDataset(Dataset):
                 np.array(ex.requested_slot_status),
                 np.array(ex.num_intents),
                 np.array(ex.intent_status),
-                np.array(self.schema_data_dict['cat_slot_emb'][service_id]),
-                np.array(self.schema_data_dict['cat_slot_value_emb'][service_id]),
-                np.array(self.schema_data_dict['noncat_slot_emb'][service_id]),
-                np.array(self.schema_data_dict['req_slot_emb'][service_id]),
+                np.array(self.schema_data_dict['cat_slot_emb'][service_id], dtype=np.float32),
+                np.array(self.schema_data_dict['cat_slot_value_emb'][service_id], dtype=np.float32),
+                np.array(self.schema_data_dict['noncat_slot_emb'][service_id], dtype=np.float32),
+                np.array(self.schema_data_dict['req_slot_emb'][service_id], dtype=np.float32),
                 np.array(self.schema_data_dict['intent_emb'][service_id], dtype=np.float32))
 
         """

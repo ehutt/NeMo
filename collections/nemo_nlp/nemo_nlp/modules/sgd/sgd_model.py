@@ -55,11 +55,9 @@ class Logits(nn.Module):
         utterance_embedding = self.activation(utterance_embedding)
         
          # Combine the utterance and element embeddings.
-        repeat_utterance_embedding = utterance_embedding.repeat(1,
-                                                                num_elements,
-                                                                1)
-        import pdb; pdb.set_trace()
-        utterance_element_emb = torch.cat([repeat_utterance_embedding,
+        repeated_utterance_embedding = utterance_embedding.unsqueeze(1).repeat(1, num_elements, 1)
+
+        utterance_element_emb = torch.cat([repeated_utterance_embedding,
                                            element_embeddings], axis = 2)
         logits = self.layer1(utterance_element_emb)
         logits = self.activation(logits)
@@ -229,11 +227,11 @@ class SGDModel(TrainableNM):
         
         """
         logit_intent_status = self._get_intents(encoded_utterance,
-                                               intent_embeddings,
-                                               num_intents)
+                                                intent_embeddings,
+                                                num_intents)
        
         logit_req_slot_status = self._get_requested_slots(encoded_utterance,
-                                                         req_slot_emb)
+                                                          req_slot_emb)
        
         logit_cat_slot_status, logit_cat_slot_value = self._get_categorical_slot_goals(encoded_utterance,
                                                                                       cat_slot_emb,
@@ -275,18 +273,10 @@ class SGDModel(TrainableNM):
         logits = logits.squeeze(axis=-1) # Shape: (batch_size, max_intents + 1)
         
         # Mask out logits for padded intents, 1 is added to account for NONE intent.
-        mask, negative_logits = self._get_mask(logits,
+        mask, negative_logits = get_mask(logits,
                                                max_length=max_num_intents + 1,
                                                actual_length=num_intents + 1)
         return torch.where(mask, logits, negative_logits)
-    
-    def _get_mask(self,
-                  logits,
-                  max_length,
-                  actual_length):
-        mask = torch.arange(0, max_length, 1).to(self._device) < torch.unsqueeze(actual_length, dim=-1)
-        negative_logits = -0.7 * torch.ones(logits.size()).to(self._device) * torch.finfo(logits.dtype).max
-        return mask, negative_logits
     
     def _get_requested_slots(self,
                              encoded_utterance,
@@ -322,7 +312,7 @@ class SGDModel(TrainableNM):
         value_logits = value_logits.view(-1, max_num_slots, max_num_values)
 
         # Mask out logits for padded slots and values because they will be softmaxed
-        mask, negative_logits = self._get_mask(value_logits,
+        mask, negative_logits = get_mask(value_logits,
                                                max_num_values,
                                                num_categorical_slot_values)
         value_logits = torch.where(mask, value_logits, negative_logits)
@@ -358,52 +348,20 @@ class SGDModel(TrainableNM):
     
         # Mask out invalid logits for padded tokens.
         utterance_mask = utterance_mask.to(bool) # Shape: (batch_size, max_num_tokens).
+        repeated_utterance_mask = utterance_mask.unsqueeze(1).unsqueeze(3).repeat(1, max_num_slots, 1, 2)
+        negative_logits = -0.7 * torch.ones(span_logits.size()).to(self._device) * torch.finfo(span_logits.dtype).max
 
-        repeated_utterance_mask = utterance_mask.unsqueeze(1).repeat(1, max_num_slots, 1, 2)
-        negative_logits = -0.7 * torch.ones(span_logits.size()) * torch.finfo(span_logits.dtype).max
         span_logits = torch.where(repeated_utterance_mask, span_logits, negative_logits)
         
         # Shape of both tensors: (batch_size, max_num_slots, max_num_tokens).
         span_start_logits, span_end_logits = torch.unbind(span_logits, dim=3)
         return status_logits, span_start_logits, span_end_logits
 
-#utter = torch.tensor([[[1.,2.,3., 4., 5]],[[7.,8.,9., 8., 5]]])
-#num_classes = 1 # need to choose the most probable intent
-#num_elements = 4 # max num of intents per service
-#num_intents=torch.tensor([4, 2])
-#       
-#intent_embedding = torch.tensor([[[1., 1., 1., 1., 1.],
-#                                 [2., 2., 2., 2., 2.],
-#                                 [0., 0., 0., 0., 0.],
-#                                 [0., 0., 0., 0., 0.]],
-#                                [[1., 1., 1., 1., 1.],
-#                                 [2., 2., 2., 2., 2.],
-#                                 [0., 0., 0., 0., 0.],
-#                                 [0., 0., 0., 0., 0.]]]) # 1, 4, 5
-#    
-#embedding_dim = utter.size()[-1]
-#net = SGDModel(num_classes=num_classes,
-#               embedding_dim=embedding_dim)
-#print('\n\n', '#'*30)
-#print(net)
-#print('\n\n', '#'*30)
-#logits = net(utter,
-#             intent_embedding,
-#             num_intents)
-#print(logits)
-#print('\n\n', '#'*30)
-#params = list(net.parameters())
-#
-#
-#for name, param in net.named_parameters():
-#    print (name, param.data)
 
-
-
-
-
-
-
-
-
-
+def get_mask(self,
+              logits,
+              max_length,
+              actual_length):
+    mask = torch.arange(0, max_length, 1).to(self._device) < torch.unsqueeze(actual_length, dim=-1)
+    negative_logits = -0.7 * torch.ones(logits.size()).to(self._device) * torch.finfo(logits.dtype).max
+    return mask, negative_logits
