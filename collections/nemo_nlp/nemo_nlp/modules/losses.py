@@ -1,12 +1,13 @@
 import torch
 from torch import nn
 
-from nemo.collections.nemo_nlp.nemo_nlp.sgd.sgd_model import get_mask
+import nemo_nlp
 from nemo.backends.pytorch.nm import LossNM
 from nemo.backends.pytorch.common.losses import CrossEntropyLoss
 from nemo.core.neural_types import *
 from .pytorch_utils import SmoothedCrossEntropyLoss
 from ..utils.nlp_utils import mask_padded_tokens
+import nemo_nlp.data.datasets.sgd.data_utils as data_utils
 
 
 __all__ = ['JointIntentSlotLoss',
@@ -592,8 +593,34 @@ class SGDDialogueStateLoss(LossNM):
             }),
            "num_slots": NeuralType ({
                 0:AxisType(BatchTag)
+            }),
+           "categorical_slot_status": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+           "num_categorical_slots": NeuralType ({
+                0: AxisType(BatchTag)
+            }),
+           "categorical_slot_values": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+           "noncategorical_slot_status": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+           "num_noncategorical_slots": NeuralType ({
+                0: AxisType(BatchTag)
+            }),
+           "noncategorical_slot_value_start": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
+            }),
+            "noncategorical_slot_value_end": NeuralType ({
+                0: AxisType(BatchTag),
+                1: AxisType(TimeTag)
             })
-        }
+        }   
 
     @property
     def output_ports(self):
@@ -608,11 +635,17 @@ class SGDDialogueStateLoss(LossNM):
 
     def __init__(self, **kwargs):
         LossNM.__init__(self, **kwargs)
-        # if class_weights:
-        #     class_weights = torch.FloatTensor(class_weights).to(self._device)
 
-        self._criterion_intent = nn.CrossEntropyLoss()
-        # self.num_classes = num_classes
+        self._cross_entropy = nn.CrossEntropyLoss()
+        self._criterion_req_slots = nn.BCEWithLogitsLoss()
+
+
+    def _get_mask(self,
+                  max_number,
+                  values):
+
+        mask = torch.arange(0, max_number, 1).to(self._device) < torch.unsqueeze(values, dim=-1)
+        return mask.view(-1)
 
     def _loss_function(self,
                       logit_intent_status,
@@ -624,7 +657,14 @@ class SGDDialogueStateLoss(LossNM):
                       logit_noncat_slot_end,
                       intent_status,
                       requested_slot_status,
-                      num_slots):
+                      num_slots,
+                      categorical_slot_status,
+                      num_categorical_slots,
+                      categorical_slot_values,
+                      noncategorical_slot_status,
+                      num_noncategorical_slots,
+                      noncategorical_slot_value_start,
+                      noncategorical_slot_value_end):
         """
         Obtain the loss of the model
         """
@@ -634,108 +674,84 @@ class SGDDialogueStateLoss(LossNM):
             logit_intent_status Shape: (batch_size, max_num_intents + 1)
             intent_status (labels) Shape: (batch_size, max_num_intents) - one-hot encoded
         """
+
+        # Intent loss
         # Add label corresponding to NONE intent.
         num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
         none_intent_label = torch.ones(num_active_intents.size(), dtype=torch.long).to(self._device) - num_active_intents
         # Shape: (batch_size, max_num_intents + 1).
         onehot_intent_labels = torch.cat([none_intent_label, intent_status], axis=1)
-       
         # use indices for intent labels - tf uses one_hot_encoding
         _, intent_labels = onehot_intent_labels.max(dim=1)
-        intent_loss = self._criterion_intent(logit_intent_status, intent_labels)
+        intent_loss = self._cross_entropy(logit_intent_status, intent_labels)
 
         # Requested slots.
         # Shape: (batch_size, max_num_slots).
-        _, max_num_requested_slots = requested_slot_status.size()
-        weights = get_mask()
+        max_num_requested_slots = requested_slot_status.size()[-1]
+        # mask unused slots
+        req_slot_mask = self._get_mask(max_num_requested_slots, num_slots)
+        # Sigmoid cross entropy is used because more than one slots can be requested in a single utterance
+        requested_slot_loss = self._criterion_req_slots(logit_req_slot_status.view(-1)[req_slot_mask],
+                                                        requested_slot_status.view(-1)[req_slot_mask])
 
-        weights = tf.sequence_mask(
-           features["req_slot_num"], maxlen=max_num_requested_slots)
-        # Sigmoid cross entropy is used because more than one slots can be requested
-        # in a single utterance.
-        requested_slot_loss = tf.losses.sigmoid_cross_entropy(
-           requested_slot_labels, requested_slot_logits, weights=weights)
-#    
-#        # Categorical slot status.
-#        # Shape: (batch_size, max_num_cat_slots, 3).
-#        cat_slot_status_logits = outputs["logit_cat_slot_status"]
-#        cat_slot_status_labels = features["cat_slot_status"]
-#        max_num_cat_slots = cat_slot_status_labels.get_shape().as_list()[-1]
-#        one_hot_labels = tf.one_hot(cat_slot_status_labels, 3, dtype=tf.int32)
-#        cat_weights = tf.sequence_mask(
-#            features["cat_slot_num"], maxlen=max_num_cat_slots, dtype=tf.float32)
-#        cat_slot_status_loss = tf.losses.softmax_cross_entropy(
-#            tf.reshape(one_hot_labels, [-1, 3]),
-#            tf.reshape(cat_slot_status_logits, [-1, 3]),
-#            weights=tf.reshape(cat_weights, [-1]))
-#    
-#        # Categorical slot values.
-#        # Shape: (batch_size, max_num_cat_slots, max_num_slot_values).
-#        cat_slot_value_logits = outputs["logit_cat_slot_value"]
-#        cat_slot_value_labels = features["cat_slot_value"]
-#        max_num_slot_values = cat_slot_value_logits.get_shape().as_list()[-1]
-#        one_hot_labels = tf.one_hot(
-#            cat_slot_value_labels, max_num_slot_values, dtype=tf.int32)
-#        # Zero out losses for categorical slot value when the slot status is not
-#        # active.
-#        cat_loss_weight = tf.cast(
-#            tf.equal(cat_slot_status_labels, data_utils.STATUS_ACTIVE), tf.float32)
-#        cat_slot_value_loss = tf.losses.softmax_cross_entropy(
-#            tf.reshape(one_hot_labels, [-1, max_num_slot_values]),
-#            tf.reshape(cat_slot_value_logits, [-1, max_num_slot_values]),
-#            weights=tf.reshape(cat_weights * cat_loss_weight, [-1]))
-#    
-#        # Non-categorical slot status.
-#        # Shape: (batch_size, max_num_noncat_slots, 3).
-#        noncat_slot_status_logits = outputs["logit_noncat_slot_status"]
-#        noncat_slot_status_labels = features["noncat_slot_status"]
-#        max_num_noncat_slots = noncat_slot_status_labels.get_shape().as_list()[-1]
-#        one_hot_labels = tf.one_hot(noncat_slot_status_labels, 3, dtype=tf.int32)
-#        noncat_weights = tf.sequence_mask(
-#            features["noncat_slot_num"],
-#            maxlen=max_num_noncat_slots,
-#            dtype=tf.float32)
-#        # Logits for padded (invalid) values are already masked.
-#        noncat_slot_status_loss = tf.losses.softmax_cross_entropy(
-#            tf.reshape(one_hot_labels, [-1, 3]),
-#            tf.reshape(noncat_slot_status_logits, [-1, 3]),
-#            weights=tf.reshape(noncat_weights, [-1]))
-#    
-#        # Non-categorical slot spans.
-#        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).
-#        span_start_logits = outputs["logit_noncat_slot_start"]
-#        span_start_labels = features["noncat_slot_value_start"]
-#        max_num_tokens = span_start_logits.get_shape().as_list()[-1]
-#        onehot_start_labels = tf.one_hot(
-#            span_start_labels, max_num_tokens, dtype=tf.int32)
-#        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).
-#        span_end_logits = outputs["logit_noncat_slot_end"]
-#        span_end_labels = features["noncat_slot_value_end"]
-#        onehot_end_labels = tf.one_hot(
-#            span_end_labels, max_num_tokens, dtype=tf.int32)
-#        # Zero out losses for non-categorical slot spans when the slot status is not
-#        # active.
-#        noncat_loss_weight = tf.cast(
-#            tf.equal(noncat_slot_status_labels, data_utils.STATUS_ACTIVE),
-#            tf.float32)
-#        span_start_loss = tf.losses.softmax_cross_entropy(
-#            tf.reshape(onehot_start_labels, [-1, max_num_tokens]),
-#            tf.reshape(span_start_logits, [-1, max_num_tokens]),
-#            weights=tf.reshape(noncat_weights * noncat_loss_weight, [-1]))
-#        span_end_loss = tf.losses.softmax_cross_entropy(
-#            tf.reshape(onehot_end_labels, [-1, max_num_tokens]),
-#            tf.reshape(span_end_logits, [-1, max_num_tokens]),
-#            weights=tf.reshape(noncat_weights * noncat_loss_weight, [-1]))
-#    
-#        losses = {
-#            "intent_loss": intent_loss,
-#            "requested_slot_loss": requested_slot_loss,
-#            "cat_slot_status_loss": cat_slot_status_loss,
-#            "cat_slot_value_loss": cat_slot_value_loss,
-#            "noncat_slot_status_loss": noncat_slot_status_loss,
-#            "span_start_loss": span_start_loss,
-#            "span_end_loss": span_end_loss,
-#        }
-#        for loss_name, loss in losses.items():
-#          tf.summary.scalar(loss_name, loss)
-#        return sum(losses.values()) / len(losses)
+        # Categorical slot status
+        # Shape: (batch_size, max_num_cat_slots, 3)
+        max_num_cat_slots = categorical_slot_status.size()[-1]
+        cat_slot_status_mask = self._get_mask(max_num_cat_slots, num_categorical_slots)
+        cat_slot_status_loss = self._cross_entropy(logit_cat_slot_status.view(-1, 3)[cat_slot_status_mask],
+                                                   categorical_slot_status.view(-1)[cat_slot_status_mask])
+
+        # Categorical slot values.
+        # Shape: (batch_size, max_num_cat_slots, max_num_slot_values).
+        max_num_slot_values = logit_cat_slot_value.size()[-1]
+
+        # Zero out losses for categorical slot value when the slot status is not active.
+        cat_slot_value_mask = (categorical_slot_status == data_utils.STATUS_ACTIVE).view(-1)
+        # to handle cases with no active categorical slot value
+        if sum(cat_slot_value_mask) == 0:
+            cat_slot_value_loss = 0
+        else:
+            slot_values_active_logits = logit_cat_slot_value.view(-1, max_num_slot_values)[cat_slot_value_mask]
+            slot_values_active_labels = categorical_slot_values.view(-1)[cat_slot_value_mask]
+            cat_slot_value_loss = self._cross_entropy(slot_values_active_logits, slot_values_active_labels)
+
+        # Non-categorical slot status.
+        # Shape: (batch_size, max_num_noncat_slots, 3).
+        max_num_noncat_slots = noncategorical_slot_status.size()[-1]
+        non_cat_slot_status_mask = self._get_mask(max_num_noncat_slots, num_noncategorical_slots)
+        noncat_slot_status_loss = self._cross_entropy(logit_noncat_slot_status.view(-1,3)[non_cat_slot_status_mask],
+                                                      noncategorical_slot_status.view(-1)[non_cat_slot_status_mask])
+
+
+        # Non-categorical slot spans.
+        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).
+        max_num_tokens = logit_noncat_slot_start.size()[-1]
+        # Zero out losses for non-categorical slot spans when the slot status is not active.
+        non_cat_slot_value_mask = (noncategorical_slot_status == data_utils.STATUS_ACTIVE).view(-1)
+        # to handle cases with no active categorical slot value
+        if sum(non_cat_slot_value_mask) == 0:
+            span_start_loss = 0
+            span_end_loss = 0
+        else:
+            noncat_slot_start_active_logits = logit_noncat_slot_start.view(-1, max_num_tokens)[non_cat_slot_value_mask]
+            noncat_slot_start_active_labels = noncategorical_slot_value_start.view(-1)[non_cat_slot_value_mask]
+            span_start_loss = self._cross_entropy(noncat_slot_start_active_logits, noncat_slot_start_active_labels)
+
+            noncat_slot_end_active_logits = logit_noncat_slot_end.view(-1, max_num_tokens)[non_cat_slot_value_mask]
+            noncat_slot_end_active_labels = noncategorical_slot_value_end.view(-1)[non_cat_slot_value_mask]
+            span_end_loss = self._cross_entropy(noncat_slot_end_active_logits, noncat_slot_end_active_labels)
+
+        losses = {
+        "intent_loss": intent_loss,
+        "requested_slot_loss": requested_slot_loss,
+        "cat_slot_status_loss": cat_slot_status_loss,
+        "cat_slot_value_loss": cat_slot_value_loss,
+        "noncat_slot_status_loss": noncat_slot_status_loss,
+        "span_start_loss": span_start_loss,
+        "span_end_loss": span_end_loss,
+        }
+        for loss_name, loss in losses.items():
+            print (f'loss_name: {loss_name}, {loss}')
+        return sum(losses.values()) / len(losses)
+
+

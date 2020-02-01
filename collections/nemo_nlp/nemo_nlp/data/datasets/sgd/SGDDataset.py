@@ -77,20 +77,25 @@ class SGDDataset(Dataset):
                 np.array(ex.utterance_ids),
                 np.array(ex.utterance_segment),
                 np.array(ex.utterance_mask, dtype=np.long),
+                
                 np.array(ex.num_categorical_slots),
                 np.array(ex.categorical_slot_status),
                 np.array(ex.num_categorical_slot_values),
                 np.array(ex.categorical_slot_values),
+
                 np.array(ex.num_noncategorical_slots),
                 np.array(ex.noncategorical_slot_status),
                 np.array(ex.noncategorical_slot_value_start),
                 np.array(ex.noncategorical_slot_value_end),
                 np.array(ex.start_char_idx),
                 np.array(ex.end_char_idx),
-                np.array(ex.num_slots),
-                np.array(ex.requested_slot_status),
+
+                np.array(ex.num_slots), # num_requested_slots
+                np.array(ex.requested_slot_status, dtype=np.float32),
+
                 np.array(ex.num_intents),
                 np.array(ex.intent_status),
+
                 np.array(self.schema_data_dict['cat_slot_emb'][service_id], dtype=np.float32),
                 np.array(self.schema_data_dict['cat_slot_value_emb'][service_id], dtype=np.float32),
                 np.array(self.schema_data_dict['noncat_slot_emb'][service_id], dtype=np.float32),

@@ -273,9 +273,7 @@ class SGDModel(TrainableNM):
         logits = logits.squeeze(axis=-1) # Shape: (batch_size, max_intents + 1)
         
         # Mask out logits for padded intents, 1 is added to account for NONE intent.
-        mask, negative_logits = get_mask(logits,
-                                               max_length=max_num_intents + 1,
-                                               actual_length=num_intents + 1)
+        mask, negative_logits = self._get_mask(logits, max_num_intents + 1, num_intents + 1)
         return torch.where(mask, logits, negative_logits)
     
     def _get_requested_slots(self,
@@ -312,7 +310,7 @@ class SGDModel(TrainableNM):
         value_logits = value_logits.view(-1, max_num_slots, max_num_values)
 
         # Mask out logits for padded slots and values because they will be softmaxed
-        mask, negative_logits = get_mask(value_logits,
+        mask, negative_logits = self._get_mask(value_logits,
                                                max_num_values,
                                                num_categorical_slot_values)
         value_logits = torch.where(mask, value_logits, negative_logits)
@@ -358,10 +356,10 @@ class SGDModel(TrainableNM):
         return status_logits, span_start_logits, span_end_logits
 
 
-def get_mask(self,
-              logits,
-              max_length,
-              actual_length):
-    mask = torch.arange(0, max_length, 1).to(self._device) < torch.unsqueeze(actual_length, dim=-1)
-    negative_logits = -0.7 * torch.ones(logits.size()).to(self._device) * torch.finfo(logits.dtype).max
-    return mask, negative_logits
+    def _get_mask(self,
+                  logits,
+                  max_length,
+                  actual_length):
+        mask = torch.arange(0, max_length, 1).to(self._device) < torch.unsqueeze(actual_length, dim=-1)
+        negative_logits = -0.7 * torch.ones(logits.size()).to(self._device) * torch.finfo(logits.dtype).max
+        return mask, negative_logits
