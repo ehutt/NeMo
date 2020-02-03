@@ -698,8 +698,12 @@ class SGDDialogueStateLoss(LossNM):
         # Shape: (batch_size, max_num_cat_slots, 3)
         max_num_cat_slots = categorical_slot_status.size()[-1]
         cat_slot_status_mask = self._get_mask(max_num_cat_slots, num_categorical_slots)
-        cat_slot_status_loss = self._cross_entropy(logit_cat_slot_status.view(-1, 3)[cat_slot_status_mask],
-                                                   categorical_slot_status.view(-1)[cat_slot_status_mask])
+
+        if sum(cat_slot_status_mask) == 0:
+            cat_slot_status_loss = 0
+        else:
+            cat_slot_status_loss = self._cross_entropy(logit_cat_slot_status.view(-1, 3)[cat_slot_status_mask],
+                                                        categorical_slot_status.view(-1)[cat_slot_status_mask])
 
         # Categorical slot values.
         # Shape: (batch_size, max_num_cat_slots, max_num_slot_values).
@@ -750,8 +754,8 @@ class SGDDialogueStateLoss(LossNM):
         "span_start_loss": span_start_loss,
         "span_end_loss": span_end_loss,
         }
-        for loss_name, loss in losses.items():
-            print (f'loss_name: {loss_name}, {loss}')
+        # for loss_name, loss in losses.items():
+        #     print (f'loss_name: {loss_name}, {loss}')
         return sum(losses.values()) / len(losses)
 
 

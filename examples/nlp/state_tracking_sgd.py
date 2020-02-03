@@ -43,10 +43,10 @@ parser.add_argument("--dropout", default=0.1, type=float,
                     help="Dropout rate for BERT representations.")
 
 # Hyperparameters and optimization related flags.
-parser.add_argument("--num_epochs", default=1, type=int,
+parser.add_argument("--num_epochs", default=80, type=int,
                     help="Number of epochs for training")
 parser.add_argument("--optimizer_kind", default="adam", type=str)
-parser.add_argument("--train_batch_size", default=4, type=int,
+parser.add_argument("--train_batch_size", default=32, type=int,
                     help="Total batch size for training.")
 parser.add_argument("--eval_batch_size", default=8, type=int,
                     help="Total batch size for eval.")
@@ -60,7 +60,8 @@ parser.add_argument("--num_train_epochs", default=80.0, type=int,
 parser.add_argument("--lr_warmup_proportion", default=0.1, type=float,
                     help="Proportion of training to perform linear learning rate warmup for. "
                     "E.g., 0.1 = 10% of training.")
-parser.add_argument("--save_checkpoints_steps", default=1000, type=int,
+parser.add_argument("--save_epoch_freq", default=1, type=int)
+parser.add_argument("--save_step_freq", default=250, type=int,
                     help="How often to save the model checkpoint.")
 parser.add_argument("--local_rank", default=None, type=int)
 parser.add_argument("--amp_opt_level", default="O0",
@@ -217,30 +218,39 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
                 noncategorical_slot_value_end=input_data.noncategorical_slot_value_end)
 
 
-# intent_embeddings = input_data.intent_emb
-# # from schema embedding
-# outputs = {}
-# outputs["logit_intent_status"] = self._get_intents(features)
-# outputs["logit_req_slot_status"] = self._get_requested_slots(features)
-# cat_slot_status, cat_slot_value = self._get_categorical_slot_goals(features)
-# outputs["logit_cat_slot_status"] = cat_slot_status
-# outputs["logit_cat_slot_value"] = cat_slot_value
-# noncat_slot_status, noncat_span_start, noncat_span_end = (
-#     self._get_noncategorical_slot_goals(features))
-# outputs["logit_noncat_slot_status"] = noncat_slot_status
-# outputs["logit_noncat_slot_start"] = noncat_span_start
-# outputs["logit_noncat_slot_end"] = noncat_span_end
 
+# eval_datalayer = nemo_nlp.SGDDataLayer(
+#     task_name=args.task_name,
+#     vocab_file=vocab_file,
+#     do_lower_case=args.do_lower_case,
+#     tokenizer=tokenizer,
+#     max_seq_length=args.max_seq_length,
+#     data_dir=args.data_dir,
+#     dialogues_example_dir=args.dialogues_example_dir,
+#     overwrite_dial_file=args.overwrite_dial_file,
+#     shuffle=args.shuffle,
+#     dataset_split=args.dataset_split,
+#     schema_emb_processor=schema_preprocessor,
+#     batch_size=args.train_batch_size)
 
-train_tensors = [loss
-                 # logit_intent_status,
-                 # logit_req_slot_status,
-                 # logit_cat_slot_status,
-                 # logit_cat_slot_value,
-                 # logit_noncat_slot_status,
-                 # logit_noncat_slot_start,
-                 # logit_noncat_slot_end
-                 ]
+train_tensors = [loss]
+# eval_tensors = [logit_intent_status,
+#                 logit_req_slot_status,
+#                 logit_cat_slot_status,
+#                 logit_cat_slot_value,
+#                 logit_noncat_slot_status,
+#                 logit_noncat_slot_start,
+#                 logit_noncat_slot_end,
+#                 input_data.intent_status,
+#                 requested_slot_status=input_data.requested_slot_status,
+#                 num_slots=input_data.num_slots,
+#                 categorical_slot_status=input_data.categorical_slot_status,
+#                 num_categorical_slots=input_data.num_categorical_slots,
+#                 categorical_slot_values=input_data.categorical_slot_values,
+#                 noncategorical_slot_status=input_data.noncategorical_slot_status,
+#                 num_noncategorical_slots=input_data.num_noncategorical_slots,
+#                 noncategorical_slot_value_start=input_data.noncategorical_slot_value_start,
+#                 noncategorical_slot_value_end=input_data.noncategorical_slot_value_end]
 
 steps_per_epoch = len(train_datalayer) // (args.train_batch_size * args.num_gpus)
 
@@ -260,17 +270,17 @@ train_callback = nemo.core.SimpleLossLoggerCallback(
 #     tb_writer=nf.tb_writer,
 #     eval_step=steps_per_epoch)
 
-# ckpt_callback = nemo.core.CheckpointCallback(
-#     folder=nf.checkpoint_dir,
-#     epoch_freq=args.save_epoch_freq,
-#     step_freq=args.save_step_freq)
+ckpt_callback = nemo.core.CheckpointCallback(
+    folder=nf.checkpoint_dir,
+    epoch_freq=args.save_epoch_freq,
+    step_freq=args.save_step_freq)
 
 lr_policy_fn = get_lr_policy(args.lr_policy,
                              total_steps=args.num_epochs * steps_per_epoch,
                              warmup_ratio=args.lr_warmup_proportion)
 
 nf.train(tensors_to_optimize=[loss],
-         callbacks=[train_callback],
+         callbacks=[train_callback, ckpt_callback],
          lr_policy=lr_policy_fn,
          optimizer=args.optimizer_kind,
          optimization_params={"num_epochs": args.num_epochs,
