@@ -756,6 +756,6 @@ class SGDDialogueStateLoss(LossNM):
         }
         # for loss_name, loss in losses.items():
         #     print (f'loss_name: {loss_name}, {loss}')
-        return sum(losses.values()) / len(losses)
+        return sum(losses.values()) / len(losses), intent_labels
 
 

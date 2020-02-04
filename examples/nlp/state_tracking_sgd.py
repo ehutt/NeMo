@@ -16,7 +16,7 @@ import nemo_nlp
 import nemo_nlp.data.datasets.sgd.data_utils as data_utils
 import nemo_nlp.data.datasets.sgd.sgd_preprocessing as utils
 from nemo_nlp.data.datasets.sgd import tokenization
-from nemo_nlp.utils.callbacks.joint_intent_slot import \
+from nemo_nlp.utils.callbacks.sgd_callback import \
     eval_iter_callback, eval_epochs_done_callback
 from nemo.utils.lr_policies import get_lr_policy
 
@@ -46,7 +46,7 @@ parser.add_argument("--dropout", default=0.1, type=float,
 parser.add_argument("--num_epochs", default=80, type=int,
                     help="Number of epochs for training")
 parser.add_argument("--optimizer_kind", default="adam", type=str)
-parser.add_argument("--train_batch_size", default=32, type=int,
+parser.add_argument("--train_batch_size", default=2, type=int,
                     help="Total batch size for training.")
 parser.add_argument("--eval_batch_size", default=8, type=int,
                     help="Total batch size for eval.")
@@ -219,38 +219,62 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
 
 
 
-# eval_datalayer = nemo_nlp.SGDDataLayer(
-#     task_name=args.task_name,
-#     vocab_file=vocab_file,
-#     do_lower_case=args.do_lower_case,
-#     tokenizer=tokenizer,
-#     max_seq_length=args.max_seq_length,
-#     data_dir=args.data_dir,
-#     dialogues_example_dir=args.dialogues_example_dir,
-#     overwrite_dial_file=args.overwrite_dial_file,
-#     shuffle=args.shuffle,
-#     dataset_split=args.dataset_split,
-#     schema_emb_processor=schema_preprocessor,
-#     batch_size=args.train_batch_size)
+eval_datalayer = nemo_nlp.SGDDataLayer(
+    task_name=args.task_name,
+    vocab_file=vocab_file,
+    do_lower_case=args.do_lower_case,
+    tokenizer=tokenizer,
+    max_seq_length=args.max_seq_length,
+    data_dir=args.data_dir,
+    dialogues_example_dir=args.dialogues_example_dir,
+    overwrite_dial_file=args.overwrite_dial_file,
+    shuffle=args.shuffle,
+    dataset_split=args.dataset_split,
+    schema_emb_processor=schema_preprocessor,
+    batch_size=args.train_batch_size)
+
+# Encode the utterances using BERT
+eval_data = eval_datalayer()
+eval_token_embeddings = pretrained_bert_model(input_ids=eval_data.utterance_ids,
+                                         attention_mask=eval_data.utterance_mask,
+                                         token_type_ids=eval_data.utterance_segment)
+eval_encoded_utterance = encoder_extractor(hidden_states=eval_token_embeddings)
+
+eval_logit_intent_status,\
+eval_logit_req_slot_status,\
+eval_logit_cat_slot_status,\
+eval_logit_cat_slot_value,\
+eval_logit_noncat_slot_status,\
+eval_logit_noncat_slot_start,\
+eval_logit_noncat_slot_end = model(encoded_utterance=eval_encoded_utterance,
+                        token_embeddings=eval_token_embeddings,
+                        utterance_mask=eval_data.utterance_mask,
+                        num_categorical_slot_values=eval_data.num_categorical_slot_values,
+                        num_intents=eval_data.num_intents,
+                        cat_slot_emb=eval_data.cat_slot_emb,
+                        cat_slot_value_emb=eval_data.cat_slot_value_emb,
+                        noncat_slot_emb=eval_data.noncat_slot_emb,
+                        req_slot_emb=eval_data.req_slot_emb,
+                        intent_embeddings=eval_data.intent_emb)
 
 train_tensors = [loss]
-# eval_tensors = [logit_intent_status,
-#                 logit_req_slot_status,
-#                 logit_cat_slot_status,
-#                 logit_cat_slot_value,
-#                 logit_noncat_slot_status,
-#                 logit_noncat_slot_start,
-#                 logit_noncat_slot_end,
-#                 input_data.intent_status,
-#                 requested_slot_status=input_data.requested_slot_status,
-#                 num_slots=input_data.num_slots,
-#                 categorical_slot_status=input_data.categorical_slot_status,
-#                 num_categorical_slots=input_data.num_categorical_slots,
-#                 categorical_slot_values=input_data.categorical_slot_values,
-#                 noncategorical_slot_status=input_data.noncategorical_slot_status,
-#                 num_noncategorical_slots=input_data.num_noncategorical_slots,
-#                 noncategorical_slot_value_start=input_data.noncategorical_slot_value_start,
-#                 noncategorical_slot_value_end=input_data.noncategorical_slot_value_end]
+eval_tensors = [eval_logit_intent_status,
+                eval_logit_req_slot_status,
+                eval_logit_cat_slot_status,
+                eval_logit_cat_slot_value,
+                eval_logit_noncat_slot_status,
+                eval_logit_noncat_slot_start,
+                eval_logit_noncat_slot_end,
+                eval_data.intent_status,
+                eval_data.requested_slot_status,
+                eval_data.num_slots,
+                eval_data.categorical_slot_status,
+                eval_data.num_categorical_slots,
+                eval_data.categorical_slot_values,
+                eval_data.noncategorical_slot_status,
+                eval_data.num_noncategorical_slots,
+                eval_data.noncategorical_slot_value_start,
+                eval_data.noncategorical_slot_value_end]
 
 steps_per_epoch = len(train_datalayer) // (args.train_batch_size * args.num_gpus)
 
@@ -262,13 +286,13 @@ train_callback = nemo.core.SimpleLossLoggerCallback(
     get_tb_values=lambda x: [["loss", x[0]]],
     tb_writer=nf.tb_writer)
 
-# eval_callback = nemo.core.EvaluatorCallback(
-#     eval_tensors=eval_tensors,
-#     user_iter_callback=lambda x, y: eval_iter_callback(x, y),
-#     user_epochs_done_callback=lambda x:
-#         eval_epochs_done_callback(x, label_ids, f'{nf.work_dir}/graphs'),
-#     tb_writer=nf.tb_writer,
-#     eval_step=steps_per_epoch)
+eval_callback = nemo.core.EvaluatorCallback(
+    eval_tensors=eval_tensors,
+    user_iter_callback=lambda x, y: eval_iter_callback(x, y),
+    user_epochs_done_callback=lambda x:
+        eval_epochs_done_callback(x),
+    tb_writer=nf.tb_writer,
+    eval_step=steps_per_epoch)
 
 ckpt_callback = nemo.core.CheckpointCallback(
     folder=nf.checkpoint_dir,
@@ -280,7 +304,7 @@ lr_policy_fn = get_lr_policy(args.lr_policy,
                              warmup_ratio=args.lr_warmup_proportion)
 
 nf.train(tensors_to_optimize=[loss],
-         callbacks=[train_callback, ckpt_callback],
+         callbacks=[train_callback, eval_callback, ckpt_callback],
          lr_policy=lr_policy_fn,
          optimizer=args.optimizer_kind,
          optimization_params={"num_epochs": args.num_epochs,
