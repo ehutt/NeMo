@@ -217,8 +217,6 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
                 noncategorical_slot_value_start=input_data.noncategorical_slot_value_start,
                 noncategorical_slot_value_end=input_data.noncategorical_slot_value_end)
 
-
-
 eval_datalayer = nemo_nlp.SGDDataLayer(
     task_name=args.task_name,
     vocab_file=vocab_file,
@@ -229,9 +227,9 @@ eval_datalayer = nemo_nlp.SGDDataLayer(
     dialogues_example_dir=args.dialogues_example_dir,
     overwrite_dial_file=args.overwrite_dial_file,
     shuffle=args.shuffle,
-    dataset_split=args.dataset_split,
+    dataset_split='dev',
     schema_emb_processor=schema_preprocessor,
-    batch_size=args.train_batch_size)
+    batch_size=args.eval_batch_size)
 
 # Encode the utterances using BERT
 eval_data = eval_datalayer()
@@ -304,7 +302,7 @@ lr_policy_fn = get_lr_policy(args.lr_policy,
                              warmup_ratio=args.lr_warmup_proportion)
 
 nf.train(tensors_to_optimize=[loss],
-         callbacks=[train_callback, eval_callback, ckpt_callback],
+         callbacks=[train_callback],
          lr_policy=lr_policy_fn,
          optimizer=args.optimizer_kind,
          optimization_params={"num_epochs": args.num_epochs,

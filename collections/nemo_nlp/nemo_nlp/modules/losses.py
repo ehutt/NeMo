@@ -686,7 +686,8 @@ class SGDDialogueStateLoss(LossNM):
         intent_loss = self._cross_entropy(logit_intent_status, intent_labels)
 
         # Requested slots.
-        # Shape: (batch_size, max_num_slots).
+        # Shape: (batch_size, max_num_slots)
+        import pdb; pdb.set_trace()
         max_num_requested_slots = requested_slot_status.size()[-1]
         # mask unused slots
         req_slot_mask = self._get_mask(max_num_requested_slots, num_slots)
