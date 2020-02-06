@@ -677,6 +677,7 @@ class SGDDialogueStateLoss(LossNM):
 
         # Intent loss
         # Add label corresponding to NONE intent.
+        import pdb; pdb.set_trace()
         num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
         none_intent_label = torch.ones(num_active_intents.size(), dtype=torch.long).to(self._device) - num_active_intents
         # Shape: (batch_size, max_num_intents + 1).
