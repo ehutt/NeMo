@@ -280,7 +280,7 @@ class SGDModel(TrainableNM):
                              encoded_utterance,
                              requested_slot_emb):
         """Obtain logits for requested slots."""
-        import pdb; pdb.set_trace()
+
         logits = self.requested_slots_layer(encoded_utterance, requested_slot_emb)
         return logits.squeeze(axis=-1)
     

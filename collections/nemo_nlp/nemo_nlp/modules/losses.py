@@ -677,7 +677,6 @@ class SGDDialogueStateLoss(LossNM):
 
         # Intent loss
         # Add label corresponding to NONE intent.
-        import pdb; pdb.set_trace()
         num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
         none_intent_label = torch.ones(num_active_intents.size(), dtype=torch.long).to(self._device) - num_active_intents
         # Shape: (batch_size, max_num_intents + 1).
@@ -688,7 +687,9 @@ class SGDDialogueStateLoss(LossNM):
 
         # Requested slots.
         # Shape: (batch_size, max_num_slots)
-        import pdb; pdb.set_trace()
+        if torch.sum(requested_slot_status, -1)[0] > 1:
+            import pdb; pdb.set_trace()
+            print(requested_slot_status)
         max_num_requested_slots = requested_slot_status.size()[-1]
         # mask unused slots
         req_slot_mask = self._get_mask(max_num_requested_slots, num_slots)
