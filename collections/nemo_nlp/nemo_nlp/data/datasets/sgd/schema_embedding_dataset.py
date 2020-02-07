@@ -278,9 +278,6 @@ class SchemaEmbeddingDataset(Dataset):
             features.extend(
                 self._get_goal_slots_and_values_input_features(service_schema))
 
-        # input_fn = input_fn_builder(features=features,
-        #                             seq_length=self._max_seq_length)
-        # return input_fn
         return features
 
     def _populate_schema_embeddings(self,

@@ -20,15 +20,11 @@ class SGDDataset(Dataset):
 
     def __init__(self,
                  task_name,
-                 vocab_file,
-                 do_lower_case,
-                 tokenizer,
-                 max_seq_length,
-                 data_dir,
                  dialogues_example_dir,
                  overwrite_dial_file,
                  dataset_split,
-                 schema_emb_processor):  
+                 schema_emb_processor,
+                 dialogues_processor):  
 
         # Generate the dialogue examples if needed or specified.
         dial_file_name = f"{task_name}_{dataset_split}_examples.processed"
@@ -42,28 +38,18 @@ class SGDDataset(Dataset):
             nemo.logging.info(f"Loading dialogue examples from {dial_file}.")
             with open(dial_file, "rb") as f:
                 self.features = np.load(f, allow_pickle=True)
-
+ 
         else:
             nemo.logging.info("Start generating the dialogue examples.")
 
-            processor = data_utils.Dstc8DataProcessor(
-                data_dir,
-                train_file_range=data_utils.FILE_RANGES[task_name]["train"],
-                dev_file_range=data_utils.FILE_RANGES[task_name]["dev"],
-                test_file_range=data_utils.FILE_RANGES[task_name]["test"],
-                vocab_file=vocab_file,
-                do_lower_case=do_lower_case,
-                tokenizer=tokenizer,
-                max_seq_length=max_seq_length)
-
-            self.features = processor.get_dialog_examples(dataset_split)
+            self.features = dialogues_processor.get_dialog_examples(dataset_split)
             with open(dial_file, "wb") as f:
                 np.save(f, self.features)
 
             nemo.logging.info(f"The dialogue examples saved at {dial_file}")
             nemo.logging.info("Finish generating the dialogue examples.")
 
-        self.schema_data_dict = schema_emb_processor._get_schema_embeddings()
+        self.schema_data_dict = schema_emb_processor.get_schema_embeddings(dataset_split)
 
     def __len__(self):
         return len(self.features)

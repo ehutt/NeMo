@@ -46,7 +46,7 @@ parser.add_argument("--dropout", default=0.1, type=float,
 parser.add_argument("--num_epochs", default=80, type=int,
                     help="Number of epochs for training")
 parser.add_argument("--optimizer_kind", default="adam", type=str)
-parser.add_argument("--train_batch_size", default=2, type=int,
+parser.add_argument("--train_batch_size", default=8, type=int,
                     help="Total batch size for training.")
 parser.add_argument("--eval_batch_size", default=8, type=int,
                     help="Total batch size for eval.")
@@ -83,7 +83,7 @@ parser.add_argument("--work_dir", type=str, default="output/SGD",
 parser.add_argument("--schema_embedding_dir", type=str, required=True,
                     help="Directory where .npy file for embedding of entities (slots, values,"
                     " intents) in the dataset_split's schema are stored.")
-parser.add_argument("--overwrite_schema_emb_file", action="store_true",
+parser.add_argument("--overwrite_schema_emb_files", action="store_true",
                     help="Whether to generate a new Tf.record file saving the dialogue examples.")
 parser.add_argument("--dialogues_example_dir", type=str, required=True,
                     help="Directory where preprocessed DSTC8 dialogues are stored.")
@@ -91,9 +91,9 @@ parser.add_argument("--overwrite_dial_file", action="store_true",
                     help="Whether to generate a new file saving the dialogue examples.")
 parser.add_argument("--shuffle", type=bool, default=False,
                     help="Whether to shuffle training data")
-parser.add_argument("--dataset_split", type=str, required=True,
-                    choices=["train", "dev", "test"],
-                    help="Dataset split for training / prediction.")
+parser.add_argument("--eval_dataset", type=str, default="dev",
+                    choices=["dev", "test"],
+                    help="Dataset split for evaluation.")
 
 
 
@@ -140,24 +140,29 @@ schema_preprocessor = utils.SchemaPreprocessor(
     max_seq_length=args.max_seq_length,
     tokenizer=tokenizer,
     bert_model=pretrained_bert_model,
-    dataset_split=args.dataset_split,
-    overwrite_schema_emb_file=args.overwrite_schema_emb_file,
+    datasets=['train', args.eval_dataset],
+    overwrite_schema_emb_files=args.overwrite_schema_emb_files,
     bert_ckpt_dir=args.bert_ckpt_dir,
     nf=nf)
 
+# Dstc8Data
+dialogues_processor = data_utils.Dstc8DataProcessor(
+                task_name,
+                args.data_dir,
+                vocab_file=vocab_file,
+                do_lower_case=args.do_lower_case,
+                tokenizer=tokenizer,
+                max_seq_length=args.max_seq_length)
+
 train_datalayer = nemo_nlp.SGDDataLayer(
     task_name=args.task_name,
-    vocab_file=vocab_file,
-    do_lower_case=args.do_lower_case,
-    tokenizer=tokenizer,
-    max_seq_length=args.max_seq_length,
-    data_dir=args.data_dir,
     dialogues_example_dir=args.dialogues_example_dir,
     overwrite_dial_file=args.overwrite_dial_file,
-    shuffle=args.shuffle,
-    dataset_split=args.dataset_split,
+    dataset_split='train',
     schema_emb_processor=schema_preprocessor,
-    batch_size=args.train_batch_size)
+    dialogues_processor=dialogues_processor,
+    batch_size=args.train_batch_size,
+    shuffle=args.shuffle,)
 
 
 # fix
@@ -184,6 +189,7 @@ model = sgd_model.SGDModel(embedding_dim=hidden_size)
 
 logit_intent_status,\
 logit_req_slot_status,\
+req_slot_mask,\
 logit_cat_slot_status,\
 logit_cat_slot_value,\
 logit_noncat_slot_status,\
@@ -197,6 +203,7 @@ logit_noncat_slot_end = model(encoded_utterance=encoded_utterance,
                         cat_slot_value_emb=input_data.cat_slot_value_emb,
                         noncat_slot_emb=input_data.noncat_slot_emb,
                         req_slot_emb=input_data.req_slot_emb,
+                        req_num_slots=input_data.num_slots,
                         intent_embeddings=input_data.intent_emb)
 
 loss = dst_loss(logit_intent_status=logit_intent_status,
@@ -208,7 +215,7 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
                 logit_noncat_slot_end=logit_noncat_slot_end,
                 intent_status=input_data.intent_status,
                 requested_slot_status=input_data.requested_slot_status,
-                num_slots=input_data.num_slots,
+                req_slot_mask=req_slot_mask,
                 categorical_slot_status=input_data.categorical_slot_status,
                 num_categorical_slots=input_data.num_categorical_slots,
                 categorical_slot_values=input_data.categorical_slot_values,
@@ -219,20 +226,17 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
 
 eval_datalayer = nemo_nlp.SGDDataLayer(
     task_name=args.task_name,
-    vocab_file=vocab_file,
-    do_lower_case=args.do_lower_case,
-    tokenizer=tokenizer,
-    max_seq_length=args.max_seq_length,
-    data_dir=args.data_dir,
     dialogues_example_dir=args.dialogues_example_dir,
     overwrite_dial_file=args.overwrite_dial_file,
-    shuffle=args.shuffle,
-    dataset_split='dev',
+    dataset_split=args.eval_dataset,
     schema_emb_processor=schema_preprocessor,
-    batch_size=args.eval_batch_size)
+    dialogues_processor=dialogues_processor,
+    batch_size=args.eval_batch_size,
+    shuffle=False)
 
 # Encode the utterances using BERT
 eval_data = eval_datalayer()
+
 eval_token_embeddings = pretrained_bert_model(input_ids=eval_data.utterance_ids,
                                          attention_mask=eval_data.utterance_mask,
                                          token_type_ids=eval_data.utterance_segment)
@@ -240,6 +244,7 @@ eval_encoded_utterance = encoder_extractor(hidden_states=eval_token_embeddings)
 
 eval_logit_intent_status,\
 eval_logit_req_slot_status,\
+eval_req_slot_mask,\
 eval_logit_cat_slot_status,\
 eval_logit_cat_slot_value,\
 eval_logit_noncat_slot_status,\
@@ -253,6 +258,7 @@ eval_logit_noncat_slot_end = model(encoded_utterance=eval_encoded_utterance,
                         cat_slot_value_emb=eval_data.cat_slot_value_emb,
                         noncat_slot_emb=eval_data.noncat_slot_emb,
                         req_slot_emb=eval_data.req_slot_emb,
+                        req_num_slots=eval_data.num_slots,
                         intent_embeddings=eval_data.intent_emb)
 
 train_tensors = [loss]
@@ -265,7 +271,7 @@ eval_tensors = [eval_logit_intent_status,
                 eval_logit_noncat_slot_end,
                 eval_data.intent_status,
                 eval_data.requested_slot_status,
-                eval_data.num_slots,
+                eval_req_slot_mask,
                 eval_data.categorical_slot_status,
                 eval_data.num_categorical_slots,
                 eval_data.categorical_slot_values,
@@ -302,7 +308,7 @@ lr_policy_fn = get_lr_policy(args.lr_policy,
                              warmup_ratio=args.lr_warmup_proportion)
 
 nf.train(tensors_to_optimize=[loss],
-         callbacks=[train_callback],
+         callbacks=[train_callback, eval_callback],
          lr_policy=lr_policy_fn,
          optimizer=args.optimizer_kind,
          optimization_params={"num_epochs": args.num_epochs,

@@ -118,6 +118,9 @@ class SGDModel(TrainableNM):
                 1: AxisType(TimeTag),
                 2: AxisType(ChannelTag)
             }),
+            "req_num_slots": NeuralType ({
+                0:AxisType(BatchTag)
+            }),
             "intent_embeddings": NeuralType ({
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag),
@@ -144,8 +147,11 @@ class SGDModel(TrainableNM):
            }),
            "logit_req_slot_status": NeuralType({
                0: AxisType(BatchTag),
-               1: AxisType(TimeTag),
-               2: AxisType(ChannelTag)
+               1: AxisType(TimeTag)
+           }),
+           "req_slot_mask": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag)
            }),
            "logit_cat_slot_status": NeuralType({
                0: AxisType(BatchTag),
@@ -220,6 +226,7 @@ class SGDModel(TrainableNM):
                 cat_slot_value_emb,
                 noncat_slot_emb,
                 req_slot_emb,
+                req_num_slots,
                 intent_embeddings):
         
         """
@@ -230,8 +237,10 @@ class SGDModel(TrainableNM):
                                                 intent_embeddings,
                                                 num_intents)
        
-        logit_req_slot_status = self._get_requested_slots(encoded_utterance,
-                                                          req_slot_emb)
+        logit_req_slot_status, req_slot_mask = self._get_requested_slots(encoded_utterance,
+                                                                         req_slot_emb,
+                                                                         req_num_slots)
+
        
         logit_cat_slot_status, logit_cat_slot_value = self._get_categorical_slot_goals(encoded_utterance,
                                                                                       cat_slot_emb,
@@ -246,6 +255,7 @@ class SGDModel(TrainableNM):
 
         return  logit_intent_status,\
                 logit_req_slot_status,\
+                req_slot_mask,\
                 logit_cat_slot_status,\
                 logit_cat_slot_value,\
                 logit_noncat_slot_status,\
@@ -278,11 +288,17 @@ class SGDModel(TrainableNM):
     
     def _get_requested_slots(self,
                              encoded_utterance,
-                             requested_slot_emb):
+                             requested_slot_emb,
+                             req_num_slots):
         """Obtain logits for requested slots."""
 
         logits = self.requested_slots_layer(encoded_utterance, requested_slot_emb)
-        return logits.squeeze(axis=-1)
+        logits = logits.squeeze(axis=-1)
+
+        # logits shape: (batch_size, max_num_slots)
+        max_num_requested_slots = logits.size()[-1]
+        req_slot_mask, _ = self._get_mask(logits, max_num_requested_slots, req_num_slots)
+        return logits, req_slot_mask.view(-1)
     
     def _get_categorical_slot_goals(self,
                                     encoded_utterance,

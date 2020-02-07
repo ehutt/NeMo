@@ -556,8 +556,11 @@ class SGDDialogueStateLoss(LossNM):
            }),
            "logit_req_slot_status": NeuralType({
                0: AxisType(BatchTag),
-               1: AxisType(TimeTag),
-               2: AxisType(ChannelTag)
+               1: AxisType(TimeTag)
+           }),
+           "req_slot_mask": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag)
            }),
            "logit_cat_slot_status": NeuralType({
                0: AxisType(BatchTag),
@@ -590,9 +593,6 @@ class SGDDialogueStateLoss(LossNM):
            "requested_slot_status": NeuralType ({
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag)
-            }),
-           "num_slots": NeuralType ({
-                0:AxisType(BatchTag)
             }),
            "categorical_slot_status": NeuralType ({
                 0: AxisType(BatchTag),
@@ -657,7 +657,7 @@ class SGDDialogueStateLoss(LossNM):
                       logit_noncat_slot_end,
                       intent_status,
                       requested_slot_status,
-                      num_slots,
+                      req_slot_mask,
                       categorical_slot_status,
                       num_categorical_slots,
                       categorical_slot_values,
@@ -687,12 +687,7 @@ class SGDDialogueStateLoss(LossNM):
 
         # Requested slots.
         # Shape: (batch_size, max_num_slots)
-        if torch.sum(requested_slot_status, -1)[0] > 1:
-            import pdb; pdb.set_trace()
-            print(requested_slot_status)
-        max_num_requested_slots = requested_slot_status.size()[-1]
         # mask unused slots
-        req_slot_mask = self._get_mask(max_num_requested_slots, num_slots)
         # Sigmoid cross entropy is used because more than one slots can be requested in a single utterance
         requested_slot_loss = self._criterion_req_slots(logit_req_slot_status.view(-1)[req_slot_mask],
                                                         requested_slot_status.view(-1)[req_slot_mask])
@@ -731,7 +726,7 @@ class SGDDialogueStateLoss(LossNM):
 
 
         # Non-categorical slot spans.
-        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).
+        # Shape: (batch_size, max_num_noncat_slots, max_num_tokens).n
         max_num_tokens = logit_noncat_slot_start.size()[-1]
         # Zero out losses for non-categorical slot spans when the slot status is not active.
         non_cat_slot_value_mask = (noncategorical_slot_status == data_utils.STATUS_ACTIVE).view(-1)

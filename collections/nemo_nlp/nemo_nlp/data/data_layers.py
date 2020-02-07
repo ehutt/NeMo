@@ -458,7 +458,7 @@ class BertInferDataLayer(TextDataLayer):
         dataset_params = {
                           'tokenizer': tokenizer,
                           'max_seq_length': max_seq_length,
-                          'input_file': input_filef
+                          'input_file': input_file
                           }
         super().__init__(dataset_type, dataset_params, **kwargs)
 
@@ -1545,34 +1545,23 @@ class SGDDataLayer(TextDataLayer):
 
     def __init__(self,
                  task_name,
-                 vocab_file,
-                 do_lower_case,
-                 tokenizer,
-                 max_seq_length,
-                 data_dir,
                  dialogues_example_dir,
                  overwrite_dial_file,
-                 shuffle,
                  dataset_split,
                  schema_emb_processor,
+                 dialogues_processor,
                  dataset_type='SGDDataset',
+                 shuffle=False,
                  batch_size=1,
                  **kwargs):
         kwargs['batch_size'] = batch_size
-
-        if dataset_split != 'train':
-            kwargs['shuffle'] = False
-        else:
-          kwargs['shuffle'] = shuffle
+        kwargs['shuffle'] = shuffle
+        
         dataset_params = {'task_name': task_name,
-                          'vocab_file': vocab_file,
-                          'do_lower_case': do_lower_case,
-                          'tokenizer': tokenizer,
-                          'max_seq_length': max_seq_length,
-                          'data_dir': data_dir,
                           'dialogues_example_dir': dialogues_example_dir,
                           'overwrite_dial_file': overwrite_dial_file,
                           'dataset_split': dataset_split,
-                          'schema_emb_processor': schema_emb_processor
+                          'schema_emb_processor': schema_emb_processor,
+                          'dialogues_processor': dialogues_processor
                           }
         super().__init__(dataset_type, dataset_params, **kwargs)

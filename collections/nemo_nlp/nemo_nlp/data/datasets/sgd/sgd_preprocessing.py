@@ -48,8 +48,8 @@ class SchemaPreprocessor:
                  max_seq_length,
                  tokenizer,
                  bert_model,
-                 dataset_split,
-                 overwrite_schema_emb_file,
+                 datasets,
+                 overwrite_schema_emb_files,
                  bert_ckpt_dir,
                  nf):
 
@@ -78,42 +78,46 @@ class SchemaPreprocessor:
         #     nemo.logging.info(f"The dialogue examples saved at {self.dial_file}")
         #     nemo.logging.info("Finish generating the dialogue examples.")
 
-        self.schema_embedding_file = os.path.join(schema_embedding_dir,
-            f"{dataset_split}_pretrained_schema_embedding.npy")
+        self._schema_embedding_dir = schema_embedding_dir
+        for dataset_split in datasets:
+          schema_embedding_file = self._get_schema_embedding_file_name(dataset_split)
 
-        # Generate the schema embeddings if needed or specified.
-        if not os.path.exists(self.schema_embedding_file) or overwrite_schema_emb_file:
-            nemo.logging.info("Start generating the schema embeddings.")
-            # create schema embedding if no file exists
-            schema_json_path = os.path.join(data_dir, 
-                                            dataset_split,
-                                            "schema.json")
+          # Generate the schema embeddings if needed or specified.
+          if not os.path.exists(schema_embedding_file) or overwrite_schema_emb_files:
+              nemo.logging.info(f"Start generating the schema embeddings for {dataset_split} dataset.")
+              # create schema embedding if no file exists
+              schema_json_path = os.path.join(data_dir, 
+                                              dataset_split,
+                                              "schema.json")
 
-            emb_datalayer = nemo_nlp.BertInferDataLayer(dataset_type='SchemaEmbeddingDataset',
-                                                        tokenizer=tokenizer,
-                                                        max_seq_length=max_seq_length,
-                                                        input_file=schema_json_path)
-            
-            input_ids, input_mask, input_type_ids = emb_datalayer()
-            hidden_states = bert_model(input_ids=input_ids,
-                                       token_type_ids=input_type_ids,
-                                       attention_mask=input_mask)
+              emb_datalayer = nemo_nlp.BertInferDataLayer(dataset_type='SchemaEmbeddingDataset',
+                                                          tokenizer=tokenizer,
+                                                          max_seq_length=max_seq_length,
+                                                          input_file=schema_json_path)
+              
+              input_ids, input_mask, input_type_ids = emb_datalayer()
+              hidden_states = bert_model(input_ids=input_ids,
+                                         token_type_ids=input_type_ids,
+                                         attention_mask=input_mask)
 
-            evaluated_tensors = nf.infer(tensors=[hidden_states],
-                                         checkpoint_dir=bert_ckpt_dir)
+              evaluated_tensors = nf.infer(tensors=[hidden_states],
+                                           checkpoint_dir=bert_ckpt_dir)
 
-            hidden_states = [nlp_utils.concatenate(tensors) for tensors in evaluated_tensors]
-            emb_datalayer.dataset.save_embeddings(hidden_states,
-                                                  self.schema_embedding_file)
+              hidden_states = [nlp_utils.concatenate(tensors) for tensors in evaluated_tensors]
+              emb_datalayer.dataset.save_embeddings(hidden_states,
+                                                    schema_embedding_file)
 
-            nemo.logging.info(f"The schema embeddings saved at {self.schema_embedding_file}")
-            nemo.logging.info("Finish generating the schema embeddings.")
+              nemo.logging.info(f"The schema embeddings saved at {schema_embedding_file}")
+              nemo.logging.info("Finish generating the schema embeddings.")
 
-    def _get_schema_embeddings(self):
-        if not os.path.exists(self.schema_embedding_file):
-            raise ValueError(f"{self.schema_embedding_file} not found. ")
+    def get_schema_embeddings(self,
+                              dataset_split):
+        schema_embedding_file = self._get_schema_embedding_file_name(dataset_split)
 
-        with open(self.schema_embedding_file, "rb") as f:
+        if not os.path.exists(schema_embedding_file):
+            raise ValueError(f"{schema_embedding_file} not found.")
+
+        with open(schema_embedding_file, "rb") as f:
             schema_data = np.load(f, allow_pickle=True)
 
         # Convert from list of dict to dict of list
@@ -126,6 +130,11 @@ class SchemaPreprocessor:
             schema_data_dict["intent_emb"].append(service["intent_emb"])
         
         return schema_data_dict
+
+    def _get_schema_embedding_file_name(self,
+                                        dataset_split):
+        return os.path.join(self._schema_embedding_dir, f"{dataset_split}_pretrained_schema_embedding.npy")
+
 
       # def _decode_record(record, name_to_features, schema_tensors):
       #   """Decodes a record to a TensorFlow example."""

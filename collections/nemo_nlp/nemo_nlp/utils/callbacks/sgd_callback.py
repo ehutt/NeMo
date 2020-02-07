@@ -11,51 +11,65 @@ from nemo_nlp.utils.metrics.sgd_metrics import *
 
 logger = get_logger('')
 
+REQ_SLOT_THRESHOLD = 0.5
+F1Scores = collections.namedtuple("F1Scores", ["f1", "precision", "recall"])
+
+def tensor2list(tensor):
+    return tensor.detach().cpu().tolist()
 
 def eval_iter_callback(tensors,
                        global_vars):
-
-    if 'logit_intent_status' not in global_vars:
-        global_vars['logit_intent_status'] = []
-    if 'logit_req_slot_status' not in global_vars:
-        global_vars['logit_req_slot_status'] = []
-    if 'logit_cat_slot_status' not in global_vars:
-        global_vars['logit_cat_slot_status'] = []
-    if 'logit_cat_slot_value' not in global_vars:
-        global_vars['logit_cat_slot_value'] = []
     
-    if 'logit_noncat_slot_status' not in global_vars:
-        global_vars['logit_noncat_slot_status'] = []
-    if 'logit_noncat_slot_start' not in global_vars:
-        global_vars['logit_noncat_slot_start'] = []
-    if 'logit_noncat_slot_end' not in global_vars:
-        global_vars['logit_noncat_slot_end'] = []
-
+    # intents
     if 'intent_status' not in global_vars:
-        global_vars['intent_status'] = []
+        global_vars['active_intent_labels'] = []
+    if 'intent_status' not in global_vars:
+        global_vars['active_intent_preds'] = []
+
+    # requested slots
     if 'requested_slot_status' not in global_vars:
         global_vars['requested_slot_status'] = []
-    if 'intent_status' not in global_vars:
-        global_vars['intent_status'] = []
+    if 'req_slot_predictions' not in global_vars:
+        global_vars['req_slot_predictions'] = []
 
-    if 'num_slots' not in global_vars:
-        global_vars['num_slots'] = []
-    if 'categorical_slot_status' not in global_vars:
-        global_vars['categorical_slot_status'] = []
-    if 'num_categorical_slots' not in global_vars:
-        global_vars['num_categorical_slots'] = []
-    if 'categorical_slot_values' not in global_vars:
-        global_vars['categorical_slot_values'] = []
-    if 'noncategorical_slot_status' not in global_vars:
-        global_vars['noncategorical_slot_status'] = []
-    if 'categorical_slot_values' not in global_vars:
-        global_vars['categorical_slot_values'] = []
-    if 'num_noncategorical_slots' not in global_vars:
-        global_vars['num_noncategorical_slots'] = []
-    if 'noncategorical_slot_value_start' not in global_vars:
-        global_vars['noncategorical_slot_value_start'] = []
-    if 'noncategorical_slot_value_end' not in global_vars:
-        global_vars['noncategorical_slot_value_end'] = []
+
+    # # TODO check is all needed:
+    # if 'logit_intent_status' not in global_vars:
+    #     global_vars['logit_intent_status'] = []
+    
+    # if 'logit_cat_slot_status' not in global_vars:
+    #     global_vars['logit_cat_slot_status'] = []
+    # if 'logit_cat_slot_value' not in global_vars:
+    #     global_vars['logit_cat_slot_value'] = []
+    
+    # if 'logit_noncat_slot_status' not in global_vars:
+    #     global_vars['logit_noncat_slot_status'] = []
+    # if 'logit_noncat_slot_start' not in global_vars:
+    #     global_vars['logit_noncat_slot_start'] = []
+    # if 'logit_noncat_slot_end' not in global_vars:
+    #     global_vars['logit_noncat_slot_end'] = []
+
+
+    
+    # if 'intent_status' not in global_vars:
+    #     global_vars['intent_status'] = []
+
+    # if 'categorical_slot_status' not in global_vars:
+    #     global_vars['categorical_slot_status'] = []
+    # if 'num_categorical_slots' not in global_vars:
+    #     global_vars['num_categorical_slots'] = []
+    # if 'categorical_slot_values' not in global_vars:
+    #     global_vars['categorical_slot_values'] = []
+    # if 'noncategorical_slot_status' not in global_vars:
+    #     global_vars['noncategorical_slot_status'] = []
+    # if 'categorical_slot_values' not in global_vars:
+    #     global_vars['categorical_slot_values'] = []
+    # if 'num_noncategorical_slots' not in global_vars:
+    #     global_vars['num_noncategorical_slots'] = []
+    # if 'noncategorical_slot_value_start' not in global_vars:
+    #     global_vars['noncategorical_slot_value_start'] = []
+    # if 'noncategorical_slot_value_end' not in global_vars:
+    #     global_vars['noncategorical_slot_value_end'] = []
 
 
     for kv, v in tensors.items():
@@ -65,48 +79,44 @@ def eval_iter_callback(tensors,
         elif kv.startswith('intent_status'):
             intent_status = v[0]
 
-        # noncategorical slots
-        elif kv.startswith('logit_noncat_slot_status'):
-            logit_noncat_slot_status = v[0]
-        elif kv.startswith('logit_noncat_slot_start'):
-            logit_noncat_slot_start = v[0]
-        elif kv.startswith('logit_noncat_slot_end'):
-            logit_noncat_slot_end = v[0]
-        elif kv.startswith('noncategorical_slot_status'):
-            noncategorical_slot_status = v[0]
-        elif kv.startswith('num_noncategorical_slots'):
-            num_noncategorical_slots = v[0]
-        elif kv.startswith('noncategorical_slot_value_start'):
-            noncategorical_slot_value_start = v[0]
-        elif kv.startswith('noncategorical_slot_value_end'):
-            noncategorical_slot_value_end = v[0]
+    #     # noncategorical slots
+    #     elif kv.startswith('logit_noncat_slot_status'):
+    #         logit_noncat_slot_status = v[0]
+    #     elif kv.startswith('logit_noncat_slot_start'):
+    #         logit_noncat_slot_start = v[0]
+    #     elif kv.startswith('logit_noncat_slot_end'):
+    #         logit_noncat_slot_end = v[0]
+    #     elif kv.startswith('noncategorical_slot_status'):
+    #         noncategorical_slot_status = v[0]
+    #     elif kv.startswith('num_noncategorical_slots'):
+    #         num_noncategorical_slots = v[0]
+    #     elif kv.startswith('noncategorical_slot_value_start'):
+    #         noncategorical_slot_value_start = v[0]
+    #     elif kv.startswith('noncategorical_slot_value_end'):
+    #         noncategorical_slot_value_end = v[0]
 
         # requested slots
         elif kv.startswith('logit_req_slot_status'):
             logit_req_slot_status = v[0]
         elif kv.startswith('requested_slot_status'):
             requested_slot_status = v[0]
+        elif kv.startswith('req_slot_mask'):
+            requested_slot_mask = v[0]
 
-        elif kv.startswith('logit_cat_slot_status'):
-            global_vars['logit_cat_slot_status'].append(v[0].cpu().numpy())
-        elif kv.startswith('logit_cat_slot_value'):
-            global_vars['logit_cat_slot_value'].append(v[0].cpu().numpy())
+    #     elif kv.startswith('logit_cat_slot_status'):
+    #         global_vars['logit_cat_slot_status'].append(v[0].cpu().numpy())
+    #     elif kv.startswith('logit_cat_slot_value'):
+    #         global_vars['logit_cat_slot_value'].append(v[0].cpu().numpy())
         
-
+    #     elif kv.startswith('num_slots'):
+    #         global_vars['num_slots'].append(v[0].cpu().numpy())
+    #     elif kv.startswith('categorical_slot_status'):
+    #         global_vars['categorical_slot_status'].append(v[0].cpu().numpy())
+    #     elif kv.startswith('num_categorical_slots'):
+    #         global_vars['num_categorical_slots'].append(v[0].cpu().numpy())
+    #     elif kv.startswith('categorical_slot_values'):
+    #         global_vars['categorical_slot_values'].append(v[0].cpu().numpy())
         
-        elif kv.startswith('num_slots'):
-            global_vars['num_slots'].append(v[0].cpu().numpy())
-        elif kv.startswith('categorical_slot_status'):
-            global_vars['categorical_slot_status'].append(v[0].cpu().numpy())
-        elif kv.startswith('num_categorical_slots'):
-            global_vars['num_categorical_slots'].append(v[0].cpu().numpy())
-        elif kv.startswith('categorical_slot_values'):
-            global_vars['categorical_slot_values'].append(v[0].cpu().numpy())
-        
-
-        
-
-    import pdb; pdb.set_trace()
 
     num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
 
@@ -119,10 +129,8 @@ def eval_iter_callback(tensors,
 
     active_intent_preds = torch.argmax(logit_intent_status, 1)[num_active_intents.view(-1) > 0.5]
 
-    global_vars['active_intent_labels'].extend(actieve_intent_labels.cpu().numpy())
-    global_vars['active_intent_preds'].extend(active_intent_preds.cpu().numpy())
-
-    import pdb; pdb.set_trace()
+    global_vars['active_intent_labels'].extend(tensor2list(active_intent_labels))
+    global_vars['active_intent_preds'].extend(tensor2list(active_intent_preds))
 
     '''
     num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
@@ -138,12 +146,21 @@ def eval_iter_callback(tensors,
 
     '''
 
-    # mask example with no noncategorical slots
-    noncat_slots_mask = torch.sum(noncategorical_slot_status, 1) > 0
+    # # mask example with no noncategorical slots
+    # noncat_slots_mask = torch.sum(noncategorical_slot_status, 1) > 0
 
-    # mask examples with no
-    torch.sum(requested_slot_status, -1) > 0
+    # get req slots predictions
+    req_slot_predictions = torch.nn.Sigmoid()(logit_req_slot_status)
+    # mask examples with padded slots
+    req_slot_predictions = req_slot_predictions.view(-1)[requested_slot_mask]
+    requested_slot_status = requested_slot_status.view(-1)[requested_slot_mask]
 
+    ones = req_slot_predictions.new_ones(req_slot_predictions.size())
+    zeros = req_slot_predictions.new_zeros(req_slot_predictions.size())
+    req_slot_predictions = torch.where(req_slot_predictions > REQ_SLOT_THRESHOLD, ones, zeros)
+
+    global_vars['req_slot_predictions'].extend(tensor2list(req_slot_predictions))
+    global_vars['requested_slot_status'].extend(tensor2list(requested_slot_status))
 
     # point_outputs_max = torch.argmax(point_outputs, dim=-1)
     # mask_paddings = (tgt_ids == data_desc.vocab.pad_id)
@@ -155,10 +172,15 @@ def eval_iter_callback(tensors,
 
 
 def eval_epochs_done_callback(global_vars):
+    import pdb; pdb.set_trace()
     active_intent_labels = np.asarray(global_vars['active_intent_labels'])
-    active_intent_status_preds = np.asarray(global_vars['active_intent_preds'])
+    active_intent_preds = np.asarray(global_vars['active_intent_preds'])
 
     active_intent_accuracy = sum(active_intent_labels == active_intent_preds) / len(active_intent_labels)
+
+    req_slot_predictions = np.asarray(global_vars['req_slot_predictions'], dtype=int)
+    requested_slot_status = np.asarray(global_vars['requested_slot_status'], dtype=int)
+    req_slot_metrics = compute_f1(req_slot_predictions, requested_slot_status)
 
     # joint_acc, turn_acc = \
     #     evaluate_metrics(global_vars['comp_res'],
@@ -177,9 +199,9 @@ def eval_epochs_done_callback(global_vars):
         # "joint_cat_accuracy": 0.7009794862317501,
         # "joint_goal_accuracy": 0.4904726693494299,
         # "joint_noncat_accuracy": 0.6226867035546613,
-        # "requested_slots_f1": 0.9586998179553512,
-        # "requested_slots_precision": 0.988388665325285,
-        # "requested_slots_recall": 0.960093896713615
+        "requested_slots_f1": req_slot_metrics.f1,
+        "requested_slots_precision": req_slot_metrics.precision,
+        "requested_slots_recall": req_slot_metrics.recall
             }
         }
     print(metrics)
@@ -229,22 +251,20 @@ def evaluate_metrics(comp_res, gating_labels, gating_preds, ptr_code):
 
 F1Scores = collections.namedtuple("F1Scores", ["f1", "precision", "recall"])
 
-def compute_f1(list_ref, list_hyp):
-  """Compute F1 score from reference (grouth truth) list and hypothesis list.
+def compute_f1(predictions, labels):
+  """Compute F1 score from labels (grouth truth) and predictions.
 
   Args:
-    list_ref: List of true elements.
-    list_hyp: List of postive (retrieved) elements.
+    predictions: numpy array of predictions
+    labels: numpy array of labels
 
   Returns:
     A F1Scores object containing F1, precision, and recall scores.
   """
+  true = sum(labels)
+  positive = sum(predictions)
+  true_positive = sum(predictions&labels)
 
-  ref = collections.Counter(list_ref)
-  hyp = collections.Counter(list_hyp)
-  true = sum(ref.values())
-  positive = sum(hyp.values())
-  true_positive = sum((ref & hyp).values())
   precision = float(true_positive) / positive if positive else 1.0
   recall = float(true_positive) / true if true else 1.0
   if precision + recall > 0.0:
