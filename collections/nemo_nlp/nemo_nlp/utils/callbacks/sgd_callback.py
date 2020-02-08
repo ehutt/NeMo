@@ -18,8 +18,8 @@ def tensor2list(tensor):
     return tensor.detach().cpu().tolist()
 
 def eval_iter_callback(tensors,
+
                        global_vars):
-    
     # intents
     if 'intent_status' not in global_vars:
         global_vars['active_intent_labels'] = []
@@ -79,22 +79,6 @@ def eval_iter_callback(tensors,
         elif kv.startswith('intent_status'):
             intent_status = v[0]
 
-    #     # noncategorical slots
-    #     elif kv.startswith('logit_noncat_slot_status'):
-    #         logit_noncat_slot_status = v[0]
-    #     elif kv.startswith('logit_noncat_slot_start'):
-    #         logit_noncat_slot_start = v[0]
-    #     elif kv.startswith('logit_noncat_slot_end'):
-    #         logit_noncat_slot_end = v[0]
-    #     elif kv.startswith('noncategorical_slot_status'):
-    #         noncategorical_slot_status = v[0]
-    #     elif kv.startswith('num_noncategorical_slots'):
-    #         num_noncategorical_slots = v[0]
-    #     elif kv.startswith('noncategorical_slot_value_start'):
-    #         noncategorical_slot_value_start = v[0]
-    #     elif kv.startswith('noncategorical_slot_value_end'):
-    #         noncategorical_slot_value_end = v[0]
-
         # requested slots
         elif kv.startswith('logit_req_slot_status'):
             logit_req_slot_status = v[0]
@@ -103,20 +87,33 @@ def eval_iter_callback(tensors,
         elif kv.startswith('req_slot_mask'):
             requested_slot_mask = v[0]
 
-    #     elif kv.startswith('logit_cat_slot_status'):
-    #         global_vars['logit_cat_slot_status'].append(v[0].cpu().numpy())
-    #     elif kv.startswith('logit_cat_slot_value'):
-    #         global_vars['logit_cat_slot_value'].append(v[0].cpu().numpy())
-        
-    #     elif kv.startswith('num_slots'):
-    #         global_vars['num_slots'].append(v[0].cpu().numpy())
-    #     elif kv.startswith('categorical_slot_status'):
-    #         global_vars['categorical_slot_status'].append(v[0].cpu().numpy())
-    #     elif kv.startswith('num_categorical_slots'):
-    #         global_vars['num_categorical_slots'].append(v[0].cpu().numpy())
-    #     elif kv.startswith('categorical_slot_values'):
-    #         global_vars['categorical_slot_values'].append(v[0].cpu().numpy())
-        
+        # categorical slots
+        elif kv.startswith('logit_cat_slot_status'):
+            logit_cat_slot_status = v[0]
+        elif kv.startswith('logit_cat_slot_value'):
+            logit_cat_slot_value = v[0]
+        elif kv.startswith('categorical_slot_status'):
+            categorical_slot_status = v[0]
+        elif kv.startswith('num_categorical_slots'):
+            num_categorical_slots = v[0]
+        elif kv.startswith('categorical_slot_values'):
+            categorical_slot_values= v[0]
+
+        # noncategorical slots
+        elif kv.startswith('logit_noncat_slot_status'):
+            logit_noncat_slot_status = v[0]
+        elif kv.startswith('logit_noncat_slot_start'):
+            logit_noncat_slot_start = v[0]
+        elif kv.startswith('logit_noncat_slot_end'):
+            logit_noncat_slot_end = v[0]
+        elif kv.startswith('noncategorical_slot_status'):
+            noncategorical_slot_status = v[0]
+        elif kv.startswith('num_noncategorical_slots'):
+            num_noncategorical_slots = v[0]
+        elif kv.startswith('noncategorical_slot_value_start'):
+            noncategorical_slot_value_start = v[0]
+        elif kv.startswith('noncategorical_slot_value_end'):
+            noncategorical_slot_value_end = v[0]
 
     num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
 
@@ -162,6 +159,8 @@ def eval_iter_callback(tensors,
     global_vars['req_slot_predictions'].extend(tensor2list(req_slot_predictions))
     global_vars['requested_slot_status'].extend(tensor2list(requested_slot_status))
 
+
+    import pdb; pdb.set_trace()
     # point_outputs_max = torch.argmax(point_outputs, dim=-1)
     # mask_paddings = (tgt_ids == data_desc.vocab.pad_id)
     # comp_res = ((point_outputs_max == tgt_ids) | mask_paddings)
@@ -169,6 +168,16 @@ def eval_iter_callback(tensors,
 
     # global_vars['comp_res'].extend(comp_res.cpu().numpy())
     # global_vars['gating_preds'].extend(torch.argmax(gate_outputs, axis=-1).cpu().numpy())
+
+    # list of corectness scores, each corresponding to one slot in the
+    # service. The score is a float either 0.0 or 1.0 for categorical slot,
+    # and in range [0.0, 1.0] for non-categorical slot.
+    if 'correctness_slot_score' not in gloval_vars['correctness_slot_score']:
+        global_vars['correctness_slot_score'] = []
+
+    cat_slot_status_preds = torch.argmax(logit_cat_slot_status, -1)
+
+
 
 
 def eval_epochs_done_callback(global_vars):

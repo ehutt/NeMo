@@ -163,6 +163,11 @@ class SGDModel(TrainableNM):
                1: AxisType(TimeTag),
                2: AxisType(ChannelTag)
            }),
+           "cat_slot_values_mask": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
            "logit_noncat_slot_status": NeuralType({
                0: AxisType(BatchTag),
                1: AxisType(TimeTag),
@@ -242,7 +247,7 @@ class SGDModel(TrainableNM):
                                                                          req_num_slots)
 
        
-        logit_cat_slot_status, logit_cat_slot_value = self._get_categorical_slot_goals(encoded_utterance,
+        logit_cat_slot_status, logit_cat_slot_value, cat_slot_values_mask = self._get_categorical_slot_goals(encoded_utterance,
                                                                                       cat_slot_emb,
                                                                                       cat_slot_value_emb,
                                                                                       num_categorical_slot_values)
@@ -258,6 +263,7 @@ class SGDModel(TrainableNM):
                 req_slot_mask,\
                 logit_cat_slot_status,\
                 logit_cat_slot_value,\
+                cat_slot_values_mask,\
                 logit_noncat_slot_status,\
                 logit_noncat_slot_start,\
                 logit_noncat_slot_end
@@ -327,11 +333,12 @@ class SGDModel(TrainableNM):
         value_logits = value_logits.view(-1, max_num_slots, max_num_values)
 
         # Mask out logits for padded slots and values because they will be softmaxed
-        mask, negative_logits = self._get_mask(value_logits,
+        cat_slot_values_mask, negative_logits = self._get_mask(value_logits,
                                                max_num_values,
                                                num_categorical_slot_values)
-        value_logits = torch.where(mask, value_logits, negative_logits)
-        return status_logits, value_logits
+
+        value_logits = torch.where(cat_slot_values_mask, value_logits, negative_logits)
+        return status_logits, value_logits, cat_slot_values_mask
     
     def _get_noncategorical_slot_goals(self,
                                         encoded_utterance,

@@ -94,6 +94,8 @@ parser.add_argument("--shuffle", type=bool, default=False,
 parser.add_argument("--eval_dataset", type=str, default="dev",
                     choices=["dev", "test"],
                     help="Dataset split for evaluation.")
+parser.add_argument("--eval_freq", type=int, default=1000,
+                    help="Hoow often to run evaluation")
 
 
 
@@ -152,7 +154,8 @@ dialogues_processor = data_utils.Dstc8DataProcessor(
                 vocab_file=vocab_file,
                 do_lower_case=args.do_lower_case,
                 tokenizer=tokenizer,
-                max_seq_length=args.max_seq_length)
+                max_seq_length=args.max_seq_length,
+                log_data_warnings=False)
 
 train_datalayer = nemo_nlp.SGDDataLayer(
     task_name=args.task_name,
@@ -192,6 +195,7 @@ logit_req_slot_status,\
 req_slot_mask,\
 logit_cat_slot_status,\
 logit_cat_slot_value,\
+cat_slot_values_mask,\
 logit_noncat_slot_status,\
 logit_noncat_slot_start,\
 logit_noncat_slot_end = model(encoded_utterance=encoded_utterance,
@@ -219,6 +223,7 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
                 categorical_slot_status=input_data.categorical_slot_status,
                 num_categorical_slots=input_data.num_categorical_slots,
                 categorical_slot_values=input_data.categorical_slot_values,
+                cat_slot_values_mask=cat_slot_values_mask,
                 noncategorical_slot_status=input_data.noncategorical_slot_status,
                 num_noncategorical_slots=input_data.num_noncategorical_slots,
                 noncategorical_slot_value_start=input_data.noncategorical_slot_value_start,
@@ -236,7 +241,7 @@ eval_datalayer = nemo_nlp.SGDDataLayer(
 
 # Encode the utterances using BERT
 eval_data = eval_datalayer()
-
+print (len(eval_datalayer))
 eval_token_embeddings = pretrained_bert_model(input_ids=eval_data.utterance_ids,
                                          attention_mask=eval_data.utterance_mask,
                                          token_type_ids=eval_data.utterance_segment)
@@ -246,26 +251,28 @@ eval_logit_intent_status,\
 eval_logit_req_slot_status,\
 eval_req_slot_mask,\
 eval_logit_cat_slot_status,\
-eval_logit_cat_slot_value,\
+eval_logit_cat_slot_value, eval_cat_slot_values_mask,\
 eval_logit_noncat_slot_status,\
 eval_logit_noncat_slot_start,\
 eval_logit_noncat_slot_end = model(encoded_utterance=eval_encoded_utterance,
-                        token_embeddings=eval_token_embeddings,
-                        utterance_mask=eval_data.utterance_mask,
-                        num_categorical_slot_values=eval_data.num_categorical_slot_values,
-                        num_intents=eval_data.num_intents,
-                        cat_slot_emb=eval_data.cat_slot_emb,
-                        cat_slot_value_emb=eval_data.cat_slot_value_emb,
-                        noncat_slot_emb=eval_data.noncat_slot_emb,
-                        req_slot_emb=eval_data.req_slot_emb,
-                        req_num_slots=eval_data.num_slots,
-                        intent_embeddings=eval_data.intent_emb)
+                                    token_embeddings=eval_token_embeddings,
+                                    utterance_mask=eval_data.utterance_mask,
+                                    num_categorical_slot_values=eval_data.num_categorical_slot_values,
+                                    num_intents=eval_data.num_intents,
+                                    cat_slot_emb=eval_data.cat_slot_emb,
+                                    cat_slot_value_emb=eval_data.cat_slot_value_emb,
+                                    noncat_slot_emb=eval_data.noncat_slot_emb,
+                                    req_slot_emb=eval_data.req_slot_emb,
+                                    req_num_slots=eval_data.num_slots,
+                                    intent_embeddings=eval_data.intent_emb)
 
 train_tensors = [loss]
+
 eval_tensors = [eval_logit_intent_status,
                 eval_logit_req_slot_status,
                 eval_logit_cat_slot_status,
                 eval_logit_cat_slot_value,
+                eval_cat_slot_values_mask,
                 eval_logit_noncat_slot_status,
                 eval_logit_noncat_slot_start,
                 eval_logit_noncat_slot_end,
@@ -281,7 +288,7 @@ eval_tensors = [eval_logit_intent_status,
                 eval_data.noncategorical_slot_value_end]
 
 steps_per_epoch = len(train_datalayer) // (args.train_batch_size * args.num_gpus)
-
+nemo.logging.info(f'steps per epoch: {steps_per_epoch}')
 # import pdb; pdb.set_trace()
 # Create trainer and execute training action
 train_callback = nemo.core.SimpleLossLoggerCallback(
@@ -293,8 +300,7 @@ train_callback = nemo.core.SimpleLossLoggerCallback(
 eval_callback = nemo.core.EvaluatorCallback(
     eval_tensors=eval_tensors,
     user_iter_callback=lambda x, y: eval_iter_callback(x, y),
-    user_epochs_done_callback=lambda x:
-        eval_epochs_done_callback(x),
+    user_epochs_done_callback=lambda x: eval_epochs_done_callback(x),
     tb_writer=nf.tb_writer,
     eval_step=steps_per_epoch)
 
@@ -308,7 +314,9 @@ lr_policy_fn = get_lr_policy(args.lr_policy,
                              warmup_ratio=args.lr_warmup_proportion)
 
 nf.train(tensors_to_optimize=[loss],
-         callbacks=[train_callback, eval_callback],
+         callbacks=[train_callback, 
+         eval_callback
+         ],
          lr_policy=lr_policy_fn,
          optimizer=args.optimizer_kind,
          optimization_params={"num_epochs": args.num_epochs,
@@ -341,142 +349,3 @@ bert_config = modeling.BertConfig.from_json_file(
 
 
     
-
-# """ Load the pretrained BERT parameters
-# See the list of pretrained models, call:
-# nemo_nlp.huggingface.BERT.list_pretrained_models()
-# """
-# pretrained_bert_model = nemo_nlp.huggingface.BERT(
-#   pretrained_model_name=args.pretrained_bert_model, factory=nf)
-# hidden_size = pretrained_bert_model.local_parameters["hidden_size"]
-# tokenizer = BertTokenizer.from_pretrained(args.pretrained_bert_model)
-
-# task_name = args.task_name.lower()
-# if task_name not in sgd_utils.FILE_RANGES:
-#   raise ValueError(f'Task not found: {task_name}')
-
-# data_desc = SGDDataset(args.data_dir,
-#                                    tokenizer,
-#                                    task_name=task_name,
-#                                    dataset_split=args.dataset_split,
-#                                    do_lower_case=args.do_lower_case,
-#                                    dataset_name=args.dataset_name,
-#                                    none_slot_label=args.none_slot_label,
-#                                    pad_label=args.pad_label,
-#                                    max_seq_length=args.max_seq_length)
-
-# # Create sentence classification loss on top
-# classifier = nemo_nlp.JointIntentSlotClassifier(
-#   hidden_size=hidden_size,
-#   num_intents=data_desc.num_intents,
-#   num_slots=data_desc.num_slots,
-#   dropout=args.fc_dropout)
-
-# loss_fn = nemo_nlp.JointIntentSlotLoss(num_slots=data_desc.num_slots)
-
-
-# def create_pipeline(num_samples=-1,
-#                   batch_size=32,
-#                   num_gpus=1,
-#                   local_rank=0,
-#                   mode='train'):
-#   nemo.logging.info(f"Loading {mode} data...")
-#   data_file = f'{data_desc.data_dir}/{mode}.tsv'
-#   slot_file = f'{data_desc.data_dir}/{mode}_slots.tsv'
-#   shuffle = args.shuffle_data if mode == 'train' else False
-
-#   data_layer = nemo_nlp.BertJointIntentSlotDataLayer(
-#       input_file=data_file,
-#       slot_file=slot_file,
-#       pad_label=data_desc.pad_label,
-#       tokenizer=tokenizer,
-#       max_seq_length=args.max_seq_length,
-#       num_samples=num_samples,
-#       shuffle=shuffle,
-#       batch_size=batch_size,
-#       num_workers=0,
-#       local_rank=local_rank,
-#       ignore_extra_tokens=args.ignore_extra_tokens,
-#       ignore_start_end=args.ignore_start_end
-#   )
-
-#   ids, type_ids, input_mask, loss_mask, \
-#   subtokens_mask, intents, slots = data_layer()
-#   data_size = len(data_layer)
-
-#   if data_size < batch_size:
-#       nemo.logging.warning("Batch_size is larger than the dataset size")
-#       nemo.logging.warning("Reducing batch_size to dataset size")
-#       batch_size = data_size
-
-#   steps_per_epoch = math.ceil(data_size / (batch_size * num_gpus))
-#   nemo.logging.info(f"Steps_per_epoch = {steps_per_epoch}")
-
-#   hidden_states = pretrained_bert_model(input_ids=ids,
-#                                         token_type_ids=type_ids,
-#                                         attention_mask=input_mask)
-
-#   intent_logits, slot_logits = classifier(hidden_states=hidden_states)
-
-#   loss = loss_fn(intent_logits=intent_logits,
-#                  slot_logits=slot_logits,
-#                  loss_mask=loss_mask,
-#                  intents=intents,
-#                  slots=slots)
-
-#   if mode == 'train':
-#       tensors_to_evaluate = [loss, intent_logits, slot_logits]
-#   else:
-#       tensors_to_evaluate = [intent_logits, slot_logits, intents,
-#                              slots, subtokens_mask]
-
-#   return tensors_to_evaluate, loss, steps_per_epoch, data_layer
-
-
-# train_tensors, train_loss, steps_per_epoch, _ = create_pipeline(
-#   args.num_train_samples,
-#   batch_size=args.batch_size,
-#   num_gpus=args.num_gpus,
-#   local_rank=args.local_rank,
-#   mode=args.train_file_prefix)
-# eval_tensors, _, _, data_layer = create_pipeline(
-#   args.num_eval_samples,
-#   batch_size=args.batch_size,
-#   num_gpus=args.num_gpus,
-#   local_rank=args.local_rank,
-#   mode=args.eval_file_prefix)
-
-# # Create callbacks for train and eval modes
-# train_callback = nemo.core.SimpleLossLoggerCallback(
-#   tensors=train_tensors,
-#   print_func=lambda x: str(np.round(x[0].item(), 3)),
-#   tb_writer=nf.tb_writer,
-#   get_tb_values=lambda x: [["loss", x[0]]],
-#   step_freq=steps_per_epoch)
-
-# eval_callback = nemo.core.EvaluatorCallback(
-#   eval_tensors=eval_tensors,
-#   user_iter_callback=lambda x, y: eval_iter_callback(
-#       x, y, data_layer),
-#   user_epochs_done_callback=lambda x: eval_epochs_done_callback(
-#       x, f'{nf.work_dir}/graphs'),
-#   tb_writer=nf.tb_writer,
-#   eval_step=steps_per_epoch)
-
-# # Create callback to save checkpoints
-# ckpt_callback = nemo.core.CheckpointCallback(
-#   folder=nf.checkpoint_dir,
-#   epoch_freq=args.save_epoch_freq,
-#   step_freq=args.save_step_freq)
-
-# lr_policy_fn = get_lr_policy(args.lr_policy,
-#                            total_steps=args.num_epochs * steps_per_epoch,
-#                            warmup_ratio=args.lr_warmup_proportion)
-
-# nf.train(tensors_to_optimize=[train_loss],
-#        callbacks=[train_callback, eval_callback, ckpt_callback],
-#        lr_policy=lr_policy_fn,
-#        optimizer=args.optimizer_kind,
-#        optimization_params={"num_epochs": args.num_epochs,
-#                             "lr": args.lr,
-#                             "weight_decay": args.weight_decay})

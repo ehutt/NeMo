@@ -86,7 +86,8 @@ class Dstc8DataProcessor(object):
                  vocab_file,
                  do_lower_case,
                  tokenizer,
-                 max_seq_length
+                 max_seq_length,
+                 log_data_warnings
                  ):
         
         self.dstc8_data_dir = dstc8_data_dir

@@ -572,6 +572,11 @@ class SGDDialogueStateLoss(LossNM):
                1: AxisType(TimeTag),
                2: AxisType(ChannelTag)
            }),
+           "cat_slot_values_mask": NeuralType({
+               0: AxisType(BatchTag),
+               1: AxisType(TimeTag),
+               2: AxisType(ChannelTag)
+           }),
            "logit_noncat_slot_status": NeuralType({
                0: AxisType(BatchTag),
                1: AxisType(TimeTag),
@@ -661,6 +666,7 @@ class SGDDialogueStateLoss(LossNM):
                       categorical_slot_status,
                       num_categorical_slots,
                       categorical_slot_values,
+                      cat_slot_values_mask,
                       noncategorical_slot_status,
                       num_noncategorical_slots,
                       noncategorical_slot_value_start,
@@ -693,7 +699,8 @@ class SGDDialogueStateLoss(LossNM):
                                                         requested_slot_status.view(-1)[req_slot_mask])
 
         # Categorical slot status
-        # Shape: (batch_size, max_num_cat_slots, 3)
+        # Shape of logit_cat_slot_status: (batch_size, max_num_cat_slots, 3)
+        import pdb; pdb.set_trace()
         max_num_cat_slots = categorical_slot_status.size()[-1]
         cat_slot_status_mask = self._get_mask(max_num_cat_slots, num_categorical_slots)
 
