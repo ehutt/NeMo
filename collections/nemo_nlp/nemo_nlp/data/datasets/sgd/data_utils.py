@@ -187,7 +187,8 @@ class Dstc8DataProcessor(object):
         base_example.add_utterance_features(system_tokens,
                                             system_inv_alignments,
                                             user_tokens,
-                                            user_inv_alignments)
+                                            user_inv_alignments,
+                                            user_utterance)
         examples = []
         for service, user_frame in user_frames.items():
             # Create an example for this service.
@@ -349,6 +350,7 @@ class InputExample(object):
         if self.is_real_example and self._tokenizer is None:
             raise ValueError("Must specify tokenizer when input is a real example.")
 
+        self.user_utterance = 'dfsdf'
         # The id of each subword in the vocabulary for BERT.
         self.utterance_ids = [0] * self._max_seq_length
         # Denotes the identity of the sequence. Takes values 0 (system utterance)
@@ -456,7 +458,7 @@ class InputExample(object):
         return summary_dict
 
     def add_utterance_features(self, system_tokens, system_inv_alignments,
-                               user_tokens, user_inv_alignments):
+                               user_tokens, user_inv_alignments, user_utterance):
         """Add utterance related features input to bert.
 
         Note: this method modifies the system tokens and user_tokens in place to
@@ -526,7 +528,7 @@ class InputExample(object):
         end_char_idx.append(0)
 
         utterance_ids = self._tokenizer.convert_tokens_to_ids(utt_subword)
-
+       
         # Zero-pad up to the BERT input sequence length.
         while len(utterance_ids) < max_utt_len:
             utterance_ids.append(0)
@@ -539,6 +541,8 @@ class InputExample(object):
         self.utterance_mask = utt_mask
         self.start_char_idx = start_char_idx
         self.end_char_idx = end_char_idx
+
+        self.user_utterance = user_utterance
 
     def make_copy_with_utterance_features(self):
         """Make a copy of the current example with utterance features."""
@@ -554,6 +558,7 @@ class InputExample(object):
         new_example.utterance_mask = list(self.utterance_mask)
         new_example.start_char_idx = list(self.start_char_idx)
         new_example.end_char_idx = list(self.end_char_idx)
+        new_example.user_utterance = self.user_utterance
         return new_example
 
     def add_categorical_slots(self, state_update):
@@ -663,50 +668,50 @@ def list_to_str(l):
     return " ".join(str(x) for x in l)
 
 
-# Modified from run_classifier.file_based_convert_examples_to_features in the
-# public bert model repo.
-# https://github.com/google-research/bert/blob/master/run_classifier.py.
-def file_based_convert_examples_to_features(dial_examples, output_file):
-    """Convert a set of `InputExample`s to a TFRecord file."""
-    writer = open(output_file, "w")
+# # Modified from run_classifier.file_based_convert_examples_to_features in the
+# # public bert model repo.
+# # https://github.com/google-research/bert/blob/master/run_classifier.py.
+# def file_based_convert_examples_to_features(dial_examples, output_file):
+#     """Convert a set of `InputExample`s to a TFRecord file."""
+#     writer = open(output_file, "w")
 
-    for (ex_index, example) in enumerate(dial_examples):
-        if ex_index % 10000 == 0:
-            logger.info(f'Writing example {ex_index} of {len(dial_examples)}')
+#     for (ex_index, example) in enumerate(dial_examples):
+#         if ex_index % 10000 == 0:
+#             logger.info(f'Writing example {ex_index} of {len(dial_examples)}')
 
-        ex = example
-        features = collections.OrderedDict()
+#         ex = example
+#         features = collections.OrderedDict()
 
-        features["example_id"] = ex.example_id
-        features["is_real_example"] = str(int(ex.is_real_example))
-        features["service_id"] = str(ex.service_schema.service_id)
+#         features["example_id"] = ex.example_id
+#         features["is_real_example"] = str(int(ex.is_real_example))
+#         features["service_id"] = str(ex.service_schema.service_id)
 
-        features["utt"] = list_to_str(ex.utterance_ids)
-        features["utt_seg"] = list_to_str(ex.utterance_segment)
-        features["utt_mask"] = list_to_str(ex.utterance_mask)
+#         features["utt"] = list_to_str(ex.utterance_ids)
+#         features["utt_seg"] = list_to_str(ex.utterance_segment)
+#         features["utt_mask"] = list_to_str(ex.utterance_mask)
 
-        features["cat_slot_num"] = str(ex.num_categorical_slots)
-        features["cat_slot_status"] = list_to_str(ex.categorical_slot_status)
-        features["cat_slot_value_num"] = list_to_str(ex.num_categorical_slot_values)
-        features["cat_slot_value"] = list_to_str(ex.categorical_slot_values)
+#         features["cat_slot_num"] = str(ex.num_categorical_slots)
+#         features["cat_slot_status"] = list_to_str(ex.categorical_slot_status)
+#         features["cat_slot_value_num"] = list_to_str(ex.num_categorical_slot_values)
+#         features["cat_slot_value"] = list_to_str(ex.categorical_slot_values)
 
-        features["noncat_slot_num"] = str(ex.num_noncategorical_slots)
-        features["noncat_slot_status"] = list_to_str(ex.noncategorical_slot_status)
-        features["noncat_slot_value_start"] = list_to_str(ex.noncategorical_slot_value_start)
-        features["noncat_slot_value_end"] = list_to_str(ex.noncategorical_slot_value_end)
-        features["noncat_alignment_start"] = list_to_str(ex.start_char_idx)
-        features["noncat_alignment_end"] = list_to_str(ex.end_char_idx)
+#         features["noncat_slot_num"] = str(ex.num_noncategorical_slots)
+#         features["noncat_slot_status"] = list_to_str(ex.noncategorical_slot_status)
+#         features["noncat_slot_value_start"] = list_to_str(ex.noncategorical_slot_value_start)
+#         features["noncat_slot_value_end"] = list_to_str(ex.noncategorical_slot_value_end)
+#         features["noncat_alignment_start"] = list_to_str(ex.start_char_idx)
+#         features["noncat_alignment_end"] = list_to_str(ex.end_char_idx)
 
-        features["req_slot_num"] = str(ex.num_slots)
-        features["req_slot_status"] = list_to_str(ex.requested_slot_status)
+#         features["req_slot_num"] = str(ex.num_slots)
+#         features["req_slot_status"] = list_to_str(ex.requested_slot_status)
 
-        features["intent_num"] = str(ex.num_intents)
-        features["intent_status"] = list_to_str(ex.intent_status)
+#         features["intent_num"] = str(ex.num_intents)
+#         features["intent_status"] = list_to_str(ex.intent_status)
 
-        if ex_index == 0:
-            header = "\t".join(features.keys())
-            writer.write(header + "\n")
+#         if ex_index == 0:
+#             header = "\t".join(features.keys())
+#             writer.write(header + "\n")
 
-        csv_example = "\t".join(list(features.values()))
-        writer.write(csv_example + "\n")
-    writer.close()
+#         csv_example = "\t".join(list(features.values()))
+#         writer.write(csv_example + "\n")
+#     writer.close()

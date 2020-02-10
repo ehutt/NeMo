@@ -700,8 +700,8 @@ class SGDDialogueStateLoss(LossNM):
 
         # Categorical slot status
         # Shape of logit_cat_slot_status: (batch_size, max_num_cat_slots, 3)
-        import pdb; pdb.set_trace()
         max_num_cat_slots = categorical_slot_status.size()[-1]
+        
         cat_slot_status_mask = self._get_mask(max_num_cat_slots, num_categorical_slots)
 
         if sum(cat_slot_status_mask) == 0:

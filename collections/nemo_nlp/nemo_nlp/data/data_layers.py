@@ -1445,9 +1445,9 @@ class SGDDataLayer(TextDataLayer):
 
         """
         return {
-            # "example_id": NeuralType ({
-            #     0: AxisType(BatchTag)
-            # }),
+            "user_utterance": NeuralType ({
+                0: AxisType(BatchTag)
+            }),
             "is_real_example":NeuralType ({
                 0: AxisType(BatchTag)
             }),
