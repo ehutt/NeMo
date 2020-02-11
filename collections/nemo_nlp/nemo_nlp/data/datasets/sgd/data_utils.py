@@ -350,7 +350,7 @@ class InputExample(object):
         if self.is_real_example and self._tokenizer is None:
             raise ValueError("Must specify tokenizer when input is a real example.")
 
-        self.user_utterance = 'dfsdf'
+        self.user_utterance = ''
         # The id of each subword in the vocabulary for BERT.
         self.utterance_ids = [0] * self._max_seq_length
         # Denotes the identity of the sequence. Takes values 0 (system utterance)

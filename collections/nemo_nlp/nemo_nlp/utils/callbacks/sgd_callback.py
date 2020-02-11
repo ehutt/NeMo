@@ -162,19 +162,9 @@ def eval_iter_callback(tensors,
     global_vars['requested_slot_status'].extend(tensor2list(requested_slot_status))
 
     
-    # point_outputs_max = torch.argmax(point_outputs, dim=-1)
-    # mask_paddings = (tgt_ids == data_desc.vocab.pad_id)
-    # comp_res = ((point_outputs_max == tgt_ids) | mask_paddings)
-    # comp_res = torch.all(comp_res, axis=-1, keepdims=False)
-
-    # global_vars['comp_res'].extend(comp_res.cpu().numpy())
-    # global_vars['gating_preds'].extend(torch.argmax(gate_outputs, axis=-1).cpu().numpy())
-
     # list of corectness scores, each corresponding to one slot in the
     # service. The score is a float either 0.0 or 1.0 for categorical slot,
     # and in range [0.0, 1.0] for non-categorical slot.
-    
-
 
     # Categorical slots
     # mask unused slots for the service
@@ -197,16 +187,13 @@ def eval_iter_callback(tensors,
     cat_slot_values_correctness = (cat_slot_values_labels == cat_slot_values_preds).type(torch.int)
 
     cat_slot_correctness = torch.where(active_cat_slot_status_correctness, cat_slot_values_correctness, correct_cat_slot_status_mask.type(torch.int))
-    global_vars['cat_slot_correctness'].extend(tensor2list(cat_slot_correctness))
+    cat_slot_correctness = tensor2list(cat_slot_correctness)
+    global_vars['cat_slot_correctness'].extend(cat_slot_correctness)
 
-    # check that num noncategorical slots is the same across the batch
-    if not (num_categorical_slots.shape[0] * num_categorical_slots[0] == sum(num_categorical_slots)):
-        raise ValueError(f'num_categorical_slots is not the same across the batch.' +
-                          'The joint accuracy would be computed incorrectly.')
+    
 
-    joint_cat_accuracy = torch.prod(cat_slot_correctness.view(-1,num_categorical_slots[0]), -1)
-    global_vars['joint_cat_accuracy'].extend(tensor2list(joint_cat_accuracy))
-
+    global_vars['joint_cat_accuracy'].extend(get_joint_accuracy(cat_slot_status_mask,
+                                                                cat_slot_correctness))
 
     # Noncategorical slots
     max_num_noncat_slots = noncategorical_slot_status.size()[-1]
@@ -229,24 +216,43 @@ def eval_iter_callback(tensors,
     # nonactive_noncat_slot_status_correctness = sum(nonactive_noncat_slot_status_correctness.type(torch.int))
 
     # find indices of noncat slots for which predicted status was correctly predicted and is ACTIVE
-    inds_with_correct_active_noncat_slot_status = active_noncat_slot_status_correctness.type(torch.int).nonzero()
-
+    # inds_with_correct_active_noncat_slot_status = active_noncat_slot_status_correctness.type(torch.int).nonzero()
+    # import pdb; pdb.set_trace()
     # check that num noncategorical slots is the same across the batch
-    if not (num_noncategorical_slots.shape[0] * num_noncategorical_slots[0] == sum(num_noncategorical_slots)):
-        raise ValueError(f'num_noncategorical_slots is not the same across the batch. The fuzzy would not be computed correctly.')
+    # if not (num_noncategorical_slots.shape[0] * num_noncategorical_slots[0] == sum(num_noncategorical_slots)):
+    #     import pdb; pdb.set_trace()
+    #     raise ValueError(f'num_noncategorical_slots is not the same across the batch. The fuzzy would not be computed correctly.')
 
-    noncat_slot_correctness = get_noncat_slot_value_match(user_utterances,
-                                                          inds_with_correct_active_noncat_slot_status,
-                                                          noncat_slot_value_start_labels,
-                                                          noncat_slot_value_end_labels,
-                                                          noncat_slot_value_start_preds,
-                                                          noncat_slot_value_end_preds,
-                                                          num_noncategorical_slots[0])
+    # noncat_slot_correctness = get_noncat_slot_value_match(user_utterances,
+    #                                                       inds_with_correct_active_noncat_slot_status,
+    #                                                       noncat_slot_value_start_labels,
+    #                                                       noncat_slot_value_end_labels,
+    #                                                       noncat_slot_value_start_preds,
+    #                                                       noncat_slot_value_end_preds,
+    #                                                       num_noncategorical_slots[0])
 
-    global_vars['noncat_slot_correctness'].extend(noncat_slot_correctness)
+    # global_vars['noncat_slot_correctness'].extend(noncat_slot_correctness)
+    # import pdb; pdb.set_trace()
+    # print()
+    # joint_noncat_accuracy = torch.prod(noncat_slot_correctness.view(-1,num_noncategorical_slots[0]), -1)
+    # global_vars['joint_noncat_accuracy'].extend(tensor2list(joint_noncat_accuracy))
 
-    joint_noncat_accuracy = torch.prod(noncat_slot_correctness.view(-1,num_noncategorical_slots[0]), -1)
-    global_vars['joint_noncat_accuracy'].extend(tensor2list(joint_noncat_accuracy))
+def get_joint_accuracy(slot_status_mask,
+                       slot_correctness_list):
+    # determine batch_id slot active slot is associated with
+    # it's needed to get the corresponing user utterance correctly
+    splitted_mask = torch.split(slot_status_mask, 1)
+    splitted_mask = [i * x for i, x in enumerate(splitted_mask)]
+    utterance_batch_ids = [i * x.type(torch.int) for i, x in enumerate(splitted_mask)]
+    utterance_batch_ids = torch.cat(utterance_batch_ids)[slot_status_mask]
+    utterance_batch_ids = tensor2list(utterance_batch_ids)
+
+    joint_accuracy = []
+    start_idx = 0
+    for _, v in sorted(collections.Counter(utterance_batch_ids).items()):
+        joint_accuracy.append(np.prod(slot_correctness_list[start_idx : start_idx + v]))
+        start_idx += v
+    return joint_accuracy
 
 def fuzzy_string_match(str_label, str_preds):
     """Returns fuzzy string similarity score in range [0.0, 1.0]."""
@@ -303,20 +309,22 @@ def eval_epochs_done_callback(global_vars):
     # gating_acc = np.sum(gating_comp_flatten) / len(gating_comp_flatten)
     
     cat_slot_correctness = np.asarray(global_vars['cat_slot_correctness'])
-    noncat_slot_correctness = np.asarray(global_vars['noncat_slot_correctness'])
+    # noncat_slot_correctness = np.asarray(global_vars['noncat_slot_correctness'])
 
     average_cat_accuracy = np.mean(cat_slot_correctness)
-    average_noncat_accuracy = np.mean(noncat_slot_correctness)
-    average_goal_accuracy = np.mean(np.concatenate((cat_slot_correctness, noncat_slot_correctness)))
+    joint_cat_accuracy = np.mean(np.asarray(global_vars['joint_cat_accuracy'], dtype=int))
+    
+    # average_noncat_accuracy = np.mean(noncat_slot_correctness)
+    # average_goal_accuracy = np.mean(np.concatenate((cat_slot_correctness, noncat_slot_correctness)))
 
     metrics = {'all_services':
         {
         # Active intent accuracy
         "active_intent_accuracy": active_intent_accuracy,
         "average_cat_accuracy": average_cat_accuracy,
-        "average_goal_accuracy": average_goal_accuracy,
-        "average_noncat_accuracy": average_noncat_accuracy,
-        # "joint_cat_accuracy": 0.7009794862317501,
+        # "average_goal_accuracy": average_goal_accuracy,
+        # "average_noncat_accuracy": average_noncat_accuracy,
+        "joint_cat_accuracy": joint_cat_accuracy,
         # "joint_goal_accuracy": 0.4904726693494299,
         # "joint_noncat_accuracy": 0.6226867035546613,
 
@@ -329,8 +337,11 @@ def eval_epochs_done_callback(global_vars):
 
             }
         }
-    print(metrics)
 
+    print('\n' + '#'*50)
+    for k, v in metrics['all_services'].items():
+        print(f'{k}: {v}')
+    print('#'*5n0 + '\n')
 
 
     # active_intent_acc = metrics.get_active_intent_accuracy(

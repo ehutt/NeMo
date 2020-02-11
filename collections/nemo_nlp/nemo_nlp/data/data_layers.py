@@ -1556,6 +1556,7 @@ class SGDDataLayer(TextDataLayer):
                  **kwargs):
         kwargs['batch_size'] = batch_size
         kwargs['shuffle'] = shuffle
+        kwargs['num_workers'] = 0
         
         dataset_params = {'task_name': task_name,
                           'dialogues_example_dir': dialogues_example_dir,

@@ -97,8 +97,6 @@ parser.add_argument("--eval_dataset", type=str, default="dev",
 parser.add_argument("--eval_freq", type=int, default=1000,
                     help="Hoow often to run evaluation")
 
-
-
 args = parser.parse_args()
 
 if not os.path.exists(args.data_dir):
@@ -294,7 +292,7 @@ nemo.logging.info(f'steps per epoch: {steps_per_epoch}')
 # Create trainer and execute training action
 train_callback = nemo.core.SimpleLossLoggerCallback(
     tensors=train_tensors,
-    print_func=lambda x: print("Loss: {:.3f}".format(x[0].item())),
+    print_func=lambda x: nemo.logging.info("Loss: {:.3f}".format(x[0].item())),
     get_tb_values=lambda x: [["loss", x[0]]],
     tb_writer=nf.tb_writer)
 
