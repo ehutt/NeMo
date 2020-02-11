@@ -9,11 +9,34 @@ from nemo.utils.exp_logging import get_logger
 import nemo_nlp
 from nemo_nlp.utils.metrics.sgd_metrics import *
 import nemo_nlp.data.datasets.sgd.data_utils as data_utils
+from fuzzywuzzy import fuzz
 
 logger = get_logger('')
 
 REQ_SLOT_THRESHOLD = 0.5
 F1Scores = collections.namedtuple("F1Scores", ["f1", "precision", "recall"])
+
+# Evaluation and other relevant metrics for DSTC8 Schema-guided DST.
+# (1) Active intent accuracy.
+ACTIVE_INTENT_ACCURACY = "active_intent_accuracy"
+# (2) Slot tagging F1.
+SLOT_TAGGING_F1 = "slot_tagging_f1"
+SLOT_TAGGING_PRECISION = "slot_tagging_precision"
+SLOT_TAGGING_RECALL = "slot_tagging_recall"
+# (3) Requested slots F1.
+REQUESTED_SLOTS_F1 = "requested_slots_f1"
+REQUESTED_SLOTS_PRECISION = "requested_slots_precision"
+REQUESTED_SLOTS_RECALL = "requested_slots_recall"
+# (4) Average goal accuracy.
+AVERAGE_GOAL_ACCURACY = "average_goal_accuracy"
+AVERAGE_CAT_ACCURACY = "average_cat_accuracy"
+AVERAGE_NONCAT_ACCURACY = "average_noncat_accuracy"
+# (5) Joint goal accuracy.
+JOINT_GOAL_ACCURACY = "joint_goal_accuracy"
+JOINT_CAT_ACCURACY = "joint_cat_accuracy"
+JOINT_NONCAT_ACCURACY = "joint_noncat_accuracy"
+
+NAN_VAL = "NA"
 
 def tensor2list(tensor):
     return tensor.detach().cpu().tolist()
@@ -41,45 +64,10 @@ def eval_iter_callback(tensors,
     if 'noncat_slot_correctness' not in global_vars:
         global_vars['noncat_slot_correctness'] = []
 
-
-    # # TODO check is all needed:
-    # if 'logit_intent_status' not in global_vars:
-    #     global_vars['logit_intent_status'] = []
-    
-    # if 'logit_cat_slot_status' not in global_vars:
-    #     global_vars['logit_cat_slot_status'] = []
-    # if 'logit_cat_slot_value' not in global_vars:
-    #     global_vars['logit_cat_slot_value'] = []
-    
-    # if 'logit_noncat_slot_status' not in global_vars:
-    #     global_vars['logit_noncat_slot_status'] = []
-    # if 'logit_noncat_slot_start' not in global_vars:
-    #     global_vars['logit_noncat_slot_start'] = []
-    # if 'logit_noncat_slot_end' not in global_vars:
-    #     global_vars['logit_noncat_slot_end'] = []
-
-
-    
-    # if 'intent_status' not in global_vars:
-    #     global_vars['intent_status'] = []
-
-    # if 'categorical_slot_status' not in global_vars:
-    #     global_vars['categorical_slot_status'] = []
-    # if 'num_categorical_slots' not in global_vars:
-    #     global_vars['num_categorical_slots'] = []
-    # if 'categorical_slot_values' not in global_vars:
-    #     global_vars['categorical_slot_values'] = []
-    # if 'noncategorical_slot_status' not in global_vars:
-    #     global_vars['noncategorical_slot_status'] = []
-    # if 'categorical_slot_values' not in global_vars:
-    #     global_vars['categorical_slot_values'] = []
-    # if 'num_noncategorical_slots' not in global_vars:
-    #     global_vars['num_noncategorical_slots'] = []
-    # if 'noncategorical_slot_value_start' not in global_vars:
-    #     global_vars['noncategorical_slot_value_start'] = []
-    # if 'noncategorical_slot_value_end' not in global_vars:
-    #     global_vars['noncategorical_slot_value_end'] = []
-
+    if 'joint_noncat_accuracy' not in global_vars:
+        global_vars['joint_noncat_accuracy'] = []
+    if 'joint_cat_accuracy' not in global_vars:
+        global_vars['joint_cat_accuracy'] = []
 
     for kv, v in tensors.items():
         # intents
@@ -127,7 +115,7 @@ def eval_iter_callback(tensors,
             noncategorical_slot_value_end = v[0]
 
         elif kv.startswith('user_utterance'):
-            print (v)
+            user_utterances = v[0]
 
     num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
 
@@ -211,6 +199,14 @@ def eval_iter_callback(tensors,
     cat_slot_correctness = torch.where(active_cat_slot_status_correctness, cat_slot_values_correctness, correct_cat_slot_status_mask.type(torch.int))
     global_vars['cat_slot_correctness'].extend(tensor2list(cat_slot_correctness))
 
+    # check that num noncategorical slots is the same across the batch
+    if not (num_categorical_slots.shape[0] * num_categorical_slots[0] == sum(num_categorical_slots)):
+        raise ValueError(f'num_categorical_slots is not the same across the batch.' +
+                          'The joint accuracy would be computed incorrectly.')
+
+    joint_cat_accuracy = torch.prod(cat_slot_correctness.view(-1,num_categorical_slots[0]), -1)
+    global_vars['joint_cat_accuracy'].extend(tensor2list(joint_cat_accuracy))
+
 
     # Noncategorical slots
     max_num_noncat_slots = noncategorical_slot_status.size()[-1]
@@ -227,17 +223,66 @@ def eval_iter_callback(tensors,
 
     correct_noncat_slot_status_mask = noncat_slot_status_labels == noncat_slot_status_preds
     active_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels == data_utils.STATUS_ACTIVE)
-    import pdb; pdb.set_trace()
-    noncat_slot_correctness = torch.where(active_noncat_slot_status_correctness, cat_slot_values_correctness, correct_cat_slot_status_mask)
-    global_vars['noncat_slot_correctness'].extend(tensor2list(noncat_slot_correctness))
+    
+    # # calculate number of correct predictions
+    # nonactive_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels != data_utils.STATUS_ACTIVE)
+    # nonactive_noncat_slot_status_correctness = sum(nonactive_noncat_slot_status_correctness.type(torch.int))
 
-    import pdb; pdb.set_trace()
+    # find indices of noncat slots for which predicted status was correctly predicted and is ACTIVE
+    inds_with_correct_active_noncat_slot_status = active_noncat_slot_status_correctness.type(torch.int).nonzero()
+
+    # check that num noncategorical slots is the same across the batch
+    if not (num_noncategorical_slots.shape[0] * num_noncategorical_slots[0] == sum(num_noncategorical_slots)):
+        raise ValueError(f'num_noncategorical_slots is not the same across the batch. The fuzzy would not be computed correctly.')
+
+    noncat_slot_correctness = get_noncat_slot_value_match(user_utterances,
+                                                          inds_with_correct_active_noncat_slot_status,
+                                                          noncat_slot_value_start_labels,
+                                                          noncat_slot_value_end_labels,
+                                                          noncat_slot_value_start_preds,
+                                                          noncat_slot_value_end_preds,
+                                                          num_noncategorical_slots[0])
+
+    global_vars['noncat_slot_correctness'].extend(noncat_slot_correctness)
+
+    joint_noncat_accuracy = torch.prod(noncat_slot_correctness.view(-1,num_noncategorical_slots[0]), -1)
+    global_vars['joint_noncat_accuracy'].extend(tensor2list(joint_noncat_accuracy))
+
+def fuzzy_string_match(str_label, str_preds):
+    """Returns fuzzy string similarity score in range [0.0, 1.0]."""
+
+    # The higher the score, the higher the similarity between the two strings.
+    return fuzz.token_sort_ratio(str_label, str_preds) / 100.0
 
 
+def get_noncat_slot_value_match(user_utterances,
+                            indices,
+                            noncat_slot_value_start_labels,
+                            noncat_slot_value_end_labels,
+                            noncat_slot_value_start_preds,
+                            noncat_slot_value_end_preds,
+                            num_noncategorical_slots):
+    """Calculate non-categorical slots correctness.
+
+    Args:
+      str_ref_list: a list of reference strings.
+      str_hyp: the hypothesis string.
+
+    Returns:
+    score: The highest fuzzy string match score of the references and hypotheis.
+    """
+    noncat_slot_correctness = []
+    # user_utterance_ind = indices / 
+    for i, ind in enumerate(indices):
+        user_utterance = user_utterances[indices / num_noncategorical_slots]
+        str_label = user_utterance[noncat_slot_value_start_labels[ind] : noncat_slot_value_end_labels[ind]]
+        str_preds = user_utterance[noncat_slot_value_start_preds[ind] : noncat_slot_value_end_preds[ind]]
+        noncat_slot_correctness.append(max(0, fuzzy_string_match(str_label, str_preds)))
+    
+    return noncat_slot_correctness
 
 
 def eval_epochs_done_callback(global_vars):
-    import pdb; pdb.set_trace()
     active_intent_labels = np.asarray(global_vars['active_intent_labels'])
     active_intent_preds = np.asarray(global_vars['active_intent_preds'])
 
@@ -256,18 +301,32 @@ def eval_epochs_done_callback(global_vars):
 
     # gating_comp_flatten = (np.asarray(global_vars['gating_labels']) == np.asarray(global_vars['gating_preds'])).ravel()
     # gating_acc = np.sum(gating_comp_flatten) / len(gating_comp_flatten)
+    
+    cat_slot_correctness = np.asarray(global_vars['cat_slot_correctness'])
+    noncat_slot_correctness = np.asarray(global_vars['noncat_slot_correctness'])
+
+    average_cat_accuracy = np.mean(cat_slot_correctness)
+    average_noncat_accuracy = np.mean(noncat_slot_correctness)
+    average_goal_accuracy = np.mean(np.concatenate((cat_slot_correctness, noncat_slot_correctness)))
+
     metrics = {'all_services':
         {
+        # Active intent accuracy
         "active_intent_accuracy": active_intent_accuracy,
-        # "average_cat_accuracy": 0.673011948908117,
-        # "average_goal_accuracy": 0.763325453086777,
-        # "average_noncat_accuracy": 0.7997492378543167,
+        "average_cat_accuracy": average_cat_accuracy,
+        "average_goal_accuracy": average_goal_accuracy,
+        "average_noncat_accuracy": average_noncat_accuracy,
         # "joint_cat_accuracy": 0.7009794862317501,
         # "joint_goal_accuracy": 0.4904726693494299,
         # "joint_noncat_accuracy": 0.6226867035546613,
+
+        # Slot tagging F1
         "requested_slots_f1": req_slot_metrics.f1,
         "requested_slots_precision": req_slot_metrics.precision,
-        "requested_slots_recall": req_slot_metrics.recall
+        "requested_slots_recall": req_slot_metrics.recall,
+
+        # Average goal accuracy
+
             }
         }
     print(metrics)
@@ -286,33 +345,55 @@ def eval_epochs_done_callback(global_vars):
     return metrics
 
 
-def evaluate_metrics(comp_res, gating_labels, gating_preds, ptr_code):
-    # TODO: Calculate precision, recall, and F1
-    total_slots = 0
-    correct_slots = 0
-    total_turns = 0
-    correct_turns = 0
-    for result_idx, result in enumerate(comp_res):
-        turn_wrong = False
-        total_turns += 1
-        for slot_idx, slot_eq in enumerate(result):
-            total_slots += 1
-            if gating_labels[result_idx][slot_idx] == ptr_code:
-                if slot_eq:
-                    correct_slots += 1
-                else:
-                    turn_wrong = True
-            elif gating_labels[result_idx][slot_idx] == gating_preds[result_idx][slot_idx] \
-                    or (slot_eq and gating_preds[result_idx][slot_idx] == ptr_code):
-                correct_slots += 1
-            else:
-                turn_wrong = True
-        if not turn_wrong:
-            correct_turns += 1
+def get_average_and_joint_goal_accuracy(frame_ref, frame_hyp, service):
+  """Get average and joint goal accuracies of a frame.
 
-    turn_acc = correct_slots / float(total_slots) if total_slots != 0 else 0
-    joint_acc = correct_turns / float(total_turns) if total_turns != 0 else 0
-    return joint_acc, turn_acc
+  Args:
+    frame_ref: single semantic frame from reference (ground truth) file.
+    frame_hyp: single semantic frame from hypothesis (prediction) file.
+    service: a service data structure in the schema. We use it to obtain the
+      list of slots in the service and infer whether a slot is categorical.
+
+  Returns:
+    goal_acc: a dict whose values are average / joint
+        all-goal / categorical-goal / non-categorical-goal accuracies.
+  """
+  goal_acc = {}
+
+  list_acc, slot_active, slot_cat = compare_slot_values(
+      frame_ref["state"]["slot_values"], frame_hyp["state"]["slot_values"],
+      service)
+
+  # (4) Average goal accuracy.
+  active_acc = [acc for acc, active in zip(list_acc, slot_active) if active]
+  goal_acc[AVERAGE_GOAL_ACCURACY] = np.mean(
+      active_acc) if active_acc else NAN_VAL
+  # (4-a) categorical.
+  active_cat_acc = [
+      acc for acc, active, cat in zip(list_acc, slot_active, slot_cat)
+      if active and cat
+  ]
+  goal_acc[AVERAGE_CAT_ACCURACY] = (
+      np.mean(active_cat_acc) if active_cat_acc else NAN_VAL)
+  # (4-b) non-categorical.
+  active_noncat_acc = [
+      acc for acc, active, cat in zip(list_acc, slot_active, slot_cat)
+      if active and not cat
+  ]
+  goal_acc[AVERAGE_NONCAT_ACCURACY] = (
+      np.mean(active_noncat_acc) if active_noncat_acc else NAN_VAL)
+
+  # (5) Joint goal accuracy.
+  goal_acc[JOINT_GOAL_ACCURACY] = np.prod(list_acc) if list_acc else NAN_VAL
+  # (5-a) categorical.
+  cat_acc = [acc for acc, cat in zip(list_acc, slot_cat) if cat]
+  goal_acc[JOINT_CAT_ACCURACY] = np.prod(cat_acc) if cat_acc else NAN_VAL
+  # (5-b) non-categorical.
+  noncat_acc = [acc for acc, cat in zip(list_acc, slot_cat) if not cat]
+  goal_acc[JOINT_NONCAT_ACCURACY] = np.prod(
+      noncat_acc) if noncat_acc else NAN_VAL
+
+  return goal_acc
 
 
 F1Scores = collections.namedtuple("F1Scores", ["f1", "precision", "recall"])
