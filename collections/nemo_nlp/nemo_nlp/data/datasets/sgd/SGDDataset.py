@@ -59,6 +59,8 @@ class SGDDataset(Dataset):
 
         service_id = ex.service_schema.service_id
         return (ex.user_utterance,
+                # np.array(ex.start_char_idx),
+                # np.array(ex.end_char_idx),
                 np.array(ex.is_real_example),
                 np.array(service_id),
                 np.array(ex.utterance_ids),

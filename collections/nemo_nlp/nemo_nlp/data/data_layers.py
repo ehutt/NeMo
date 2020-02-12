@@ -1448,6 +1448,14 @@ class SGDDataLayer(TextDataLayer):
             "user_utterance": NeuralType ({
                 0: AxisType(BatchTag)
             }),
+            # "start_char_idx": NeuralType({
+            #     0: AxisType(BatchTag),
+            #     1: AxisType(TimeTag)
+            # }),
+            # "end_char_idx": NeuralType({
+            #     0: AxisType(BatchTag),
+            #     1: AxisType(TimeTag)
+            # }),
             "is_real_example":NeuralType ({
                 0: AxisType(BatchTag)
             }),

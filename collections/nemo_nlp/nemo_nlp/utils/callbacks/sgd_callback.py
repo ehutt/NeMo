@@ -211,17 +211,14 @@ def eval_iter_callback(tensors,
     correct_noncat_slot_status_mask = noncat_slot_status_labels == noncat_slot_status_preds
     active_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels == data_utils.STATUS_ACTIVE)
     
-    # # calculate number of correct predictions
-    # nonactive_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels != data_utils.STATUS_ACTIVE)
-    # nonactive_noncat_slot_status_correctness = sum(nonactive_noncat_slot_status_correctness.type(torch.int))
+    # calculate number of correct predictions
+    nonactive_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels != data_utils.STATUS_ACTIVE)
+    nonactive_noncat_slot_status_correctness = sum(nonactive_noncat_slot_status_correctness.type(torch.int))
 
     # find indices of noncat slots for which predicted status was correctly predicted and is ACTIVE
-    # inds_with_correct_active_noncat_slot_status = active_noncat_slot_status_correctness.type(torch.int).nonzero()
-    # import pdb; pdb.set_trace()
-    # check that num noncategorical slots is the same across the batch
-    # if not (num_noncategorical_slots.shape[0] * num_noncategorical_slots[0] == sum(num_noncategorical_slots)):
-    #     import pdb; pdb.set_trace()
-    #     raise ValueError(f'num_noncategorical_slots is not the same across the batch. The fuzzy would not be computed correctly.')
+    inds_with_correct_active_noncat_slot_status = active_noncat_slot_status_correctness.type(torch.int).nonzero()
+    import pdb; pdb.set_trace()
+
 
     # noncat_slot_correctness = get_noncat_slot_value_match(user_utterances,
     #                                                       inds_with_correct_active_noncat_slot_status,
@@ -341,7 +338,7 @@ def eval_epochs_done_callback(global_vars):
     print('\n' + '#'*50)
     for k, v in metrics['all_services'].items():
         print(f'{k}: {v}')
-    print('#'*5n0 + '\n')
+    print('#'*50 + '\n')
 
 
     # active_intent_acc = metrics.get_active_intent_accuracy(
