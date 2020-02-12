@@ -165,7 +165,6 @@ train_datalayer = nemo_nlp.SGDDataLayer(
     batch_size=args.train_batch_size,
     shuffle=args.shuffle,)
 
-train_datalayer.dataset[0]
 # fix
 bert_config = os.path.join(args.bert_ckpt_dir, 'bert_config.json')
 if not os.path.exists(bert_config):
@@ -267,8 +266,8 @@ eval_logit_noncat_slot_end = model(encoded_utterance=eval_encoded_utterance,
 train_tensors = [loss]
 
 eval_tensors = [eval_data.user_utterance,
-                # eval_data.start_char_idx,
-                # eval_data.end_char_idx,
+                eval_data.start_char_idx,
+                eval_data.end_char_idx,
                 eval_logit_intent_status,
                 eval_logit_req_slot_status,
                 eval_logit_cat_slot_status,

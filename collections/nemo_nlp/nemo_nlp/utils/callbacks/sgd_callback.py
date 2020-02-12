@@ -114,6 +114,11 @@ def eval_iter_callback(tensors,
         elif kv.startswith('noncategorical_slot_value_end'):
             noncategorical_slot_value_end = v[0]
 
+        elif kv.startswith('start_char_idx'):
+            start_char_idxs = v[0]
+        elif kv.startswith('end_char_idx'):
+            end_char_idxs = v[0]
+
         elif kv.startswith('user_utterance'):
             user_utterances = v[0]
 
@@ -124,6 +129,7 @@ def eval_iter_callback(tensors,
 
     active_intent_onehot_labels = intent_status[num_active_intents.view(-1) > 0.5]
     # get indices of active intents and add 1 to take into account NONE intent
+
     active_intent_labels = active_intent_onehot_labels.max(dim=1)[1] + 1
 
     active_intent_preds = torch.argmax(logit_intent_status, 1)[num_active_intents.view(-1) > 0.5]
@@ -211,13 +217,85 @@ def eval_iter_callback(tensors,
     correct_noncat_slot_status_mask = noncat_slot_status_labels == noncat_slot_status_preds
     active_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels == data_utils.STATUS_ACTIVE)
     
+    # remove:
+    active_noncat_slot_status_correctness = noncat_slot_status_labels == data_utils.STATUS_ACTIVE
+    system_utterances = None
+
+
     # calculate number of correct predictions
     nonactive_noncat_slot_status_correctness = correct_noncat_slot_status_mask * (noncat_slot_status_labels != data_utils.STATUS_ACTIVE)
     nonactive_noncat_slot_status_correctness = sum(nonactive_noncat_slot_status_correctness.type(torch.int))
 
     # find indices of noncat slots for which predicted status was correctly predicted and is ACTIVE
     inds_with_correct_active_noncat_slot_status = active_noncat_slot_status_correctness.type(torch.int).nonzero()
+
+    # use active_noncat_slot_status_correctness to select only slots with correctly predicted status ACTIVE
+    noncat_slot_value_start_labels = noncat_slot_value_start_labels[active_noncat_slot_status_correctness]
+    noncat_slot_value_end_labels = noncat_slot_value_end_labels[active_noncat_slot_status_correctness]
+    noncat_slot_value_start_preds = noncat_slot_value_start_preds[active_noncat_slot_status_correctness]
+    noncat_slot_value_end_preds = noncat_slot_value_end_preds[active_noncat_slot_status_correctness]
+    
+    # get joint accuracies
+    cat_batch_ids = get_batch_ids(cat_slot_status_mask)
+    noncat_batch_ids = get_batch_ids(noncat_slot_status_mask)
+
+
+    slot_values_true = get_slot_values(noncat_slot_value_start_labels,
+                                       noncat_slot_value_end_labels,
+                                       start_char_idxs,
+                                       end_char_idxs,
+                                       noncat_batch_ids[active_noncat_slot_status_correctness],
+                                       user_utterances,
+                                       system_utterances)
+
+    
+
+    slot_values_preds = get_slot_values(noncat_slot_value_start_preds,
+                       noncat_slot_value_end_preds,
+                       start_char_idxs,
+                       end_char_idxs,
+                       noncat_batch_ids[active_noncat_slot_status_correctness],
+                       user_utterances,
+                       system_utterances)
+
+    # fuzzy_scores = get_fuzzy_scores(slot_values_true, slot_values_preds)
+    fuzzy_scores = get_fuzzy_scores(slot_values_true, slot_values_true)
+    
+    print (fuzzy_scores)
     import pdb; pdb.set_trace()
+    print()
+
+
+    # get joint goal accuracies
+
+def get_slot_values(noncat_slot_value_start,
+                   noncat_slot_value_end,
+                   start_char_idxs,
+                   end_char_idxs,
+                   batch_ids,
+                   user_utterances,
+                   system_utterances):
+
+    slot_values = []
+    for i in range(len(noncat_slot_value_start)):
+        tok_start_idx = noncat_slot_value_start[i]
+        tok_end_idx = noncat_slot_value_end[i]
+        ch_start_idx = start_char_idxs[batch_ids[i]][tok_start_idx]
+        ch_end_idx = end_char_idxs[batch_ids[i]][tok_end_idx]
+
+        if ch_start_idx < 0 and ch_end_idx < 0:
+            # Add span from the system utterance
+            print ('system utterance required')
+            slot_values.append(None)
+            # slot_values[slot] = (
+            #     system_utterance[-ch_start_idx - 1:-ch_end_idx])
+        elif ch_start_idx > 0 and ch_end_idx > 0:
+            # Add span from the user utterance
+            slot_values.append(user_utterances[batch_ids[i]][ch_start_idx - 1:ch_end_idx])
+        else:
+            slot_values.append(None)
+    return slot_values
+
 
 
     # noncat_slot_correctness = get_noncat_slot_value_match(user_utterances,
@@ -234,28 +312,71 @@ def eval_iter_callback(tensors,
     # joint_noncat_accuracy = torch.prod(noncat_slot_correctness.view(-1,num_noncategorical_slots[0]), -1)
     # global_vars['joint_noncat_accuracy'].extend(tensor2list(joint_noncat_accuracy))
 
-def get_joint_accuracy(slot_status_mask,
-                       slot_correctness_list):
+def get_noncategorical_slots_predictions(slot_status_mask,
+                                          slot_correctness_list,
+                                          noncat_slot_value_start_preds,
+                                          noncat_slot_value_start_labels,
+                                          noncat_slot_value_end_preds,
+                                          noncat_slot_value_end_labels,
+                                          utterance_batch_ids):
+    pass
+    
+    # # from predictions
+    # for i in range(len())
+
+    # tok_start_idx = start_char_idx[slot_idx]
+    # tok_end_idx = end_char_idx[slot_idx]
+
+    # ch_start_idx = predictions["noncat_alignment_start"][tok_start_idx]
+    # ch_end_idx = predictions["noncat_alignment_end"][tok_end_idx]
+    # if ch_start_idx < 0 and ch_end_idx < 0:
+    #   # Add span from the system utterance.
+    #   slot_values[slot] = (
+    #       system_utterance[-ch_start_idx - 1:-ch_end_idx])
+    # elif ch_start_idx > 0 and ch_end_idx > 0:
+    #   # Add span from the user utterance.
+    #   slot_values[slot] = (user_utterance[ch_start_idx - 1:ch_end_idx])
+
+def get_batch_ids(slot_status_mask):
     # determine batch_id slot active slot is associated with
     # it's needed to get the corresponing user utterance correctly
     splitted_mask = torch.split(slot_status_mask, 1)
     splitted_mask = [i * x for i, x in enumerate(splitted_mask)]
     utterance_batch_ids = [i * x.type(torch.int) for i, x in enumerate(splitted_mask)]
     utterance_batch_ids = torch.cat(utterance_batch_ids)[slot_status_mask]
-    utterance_batch_ids = tensor2list(utterance_batch_ids)
+    return utterance_batch_ids
+
+def get_joint_accuracy(slot_status_mask,
+                       slot_correctness_list):
+    batch_ids = tensor2list(get_batch_ids(slot_status_mask))
 
     joint_accuracy = []
     start_idx = 0
-    for _, v in sorted(collections.Counter(utterance_batch_ids).items()):
+    for _, v in sorted(collections.Counter(batch_ids).items()):
         joint_accuracy.append(np.prod(slot_correctness_list[start_idx : start_idx + v]))
         start_idx += v
-    return joint_accuracy
+    return joint_accuracy, batch_ids
 
-def fuzzy_string_match(str_label, str_preds):
+def get_fuzzy_scores(slot_values_true_list, slot_values_preds_list):
     """Returns fuzzy string similarity score in range [0.0, 1.0]."""
 
-    # The higher the score, the higher the similarity between the two strings.
-    return fuzz.token_sort_ratio(str_label, str_preds) / 100.0
+    # The higher the score, the higher the similarity between the two strings
+    fuzzy_scores = []
+
+    for str_true, str_preds in zip(slot_values_true_list, slot_values_preds_list):
+        print ('true:', str_true)
+        print ('pred:', str_preds)
+        if str_true is None:
+            if str_preds is None:
+                # if the slot value was mentioned in the previous utterances of the dialogue
+                # that are not part of the current turn
+                score = 1 # true and prediction don't modify previously set slot value
+            else:
+                score = 0 # preds incorrectly modifyes previously set slot value
+        else:
+            score = fuzz.token_sort_ratio(str_true, str_preds) / 100.0
+        fuzzy_scores.append(score)
+    return fuzzy_scores
 
 
 def get_noncat_slot_value_match(user_utterances,

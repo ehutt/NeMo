@@ -59,8 +59,6 @@ class SGDDataset(Dataset):
 
         service_id = ex.service_schema.service_id
         return (ex.user_utterance,
-                # np.array(ex.start_char_idx),
-                # np.array(ex.end_char_idx),
                 np.array(ex.is_real_example),
                 np.array(service_id),
                 np.array(ex.utterance_ids),
@@ -76,8 +74,8 @@ class SGDDataset(Dataset):
                 np.array(ex.noncategorical_slot_status),
                 np.array(ex.noncategorical_slot_value_start),
                 np.array(ex.noncategorical_slot_value_end),
-                np.array(ex.start_char_idx),
-                np.array(ex.end_char_idx),
+                np.array(ex.start_char_idx), # noncat_alignment_start
+                np.array(ex.end_char_idx), # noncat_alignment_end
 
                 np.array(ex.num_slots), # num_requested_slots
                 np.array(ex.requested_slot_status, dtype=np.float32),

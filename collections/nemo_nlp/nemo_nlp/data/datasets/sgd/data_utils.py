@@ -188,7 +188,8 @@ class Dstc8DataProcessor(object):
                                             system_inv_alignments,
                                             user_tokens,
                                             user_inv_alignments,
-                                            user_utterance)
+                                            user_utterance,
+                                            system_utterance)
         examples = []
         for service, user_frame in user_frames.items():
             # Create an example for this service.
@@ -351,6 +352,7 @@ class InputExample(object):
             raise ValueError("Must specify tokenizer when input is a real example.")
 
         self.user_utterance = ''
+        self.system_utterance = ''
         # The id of each subword in the vocabulary for BERT.
         self.utterance_ids = [0] * self._max_seq_length
         # Denotes the identity of the sequence. Takes values 0 (system utterance)
@@ -458,7 +460,7 @@ class InputExample(object):
         return summary_dict
 
     def add_utterance_features(self, system_tokens, system_inv_alignments,
-                               user_tokens, user_inv_alignments, user_utterance):
+                               user_tokens, user_inv_alignments, system_utterance, user_utterance):
         """Add utterance related features input to bert.
 
         Note: this method modifies the system tokens and user_tokens in place to
@@ -542,7 +544,8 @@ class InputExample(object):
         self.start_char_idx = start_char_idx
         self.end_char_idx = end_char_idx
 
-        self.user_utterance = user_utterance
+        self.user_utterances = user_utterance
+        serf.system_utterance = system_utterance
 
     def make_copy_with_utterance_features(self):
         """Make a copy of the current example with utterance features."""
@@ -559,6 +562,7 @@ class InputExample(object):
         new_example.start_char_idx = list(self.start_char_idx)
         new_example.end_char_idx = list(self.end_char_idx)
         new_example.user_utterance = self.user_utterance
+        new_example.system_utterance = self.system_utterance
         return new_example
 
     def add_categorical_slots(self, state_update):
