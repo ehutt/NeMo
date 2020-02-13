@@ -39,6 +39,9 @@ JOINT_NONCAT_ACCURACY = "joint_noncat_accuracy"
 
 NAN_VAL = "NA"
 
+ALL_SERVICES = "#ALL_SERVICES"
+SEEN_SERVICES = "#SEEN_SERVICES"
+UNSEEN_SERVICES = "#UNSEEN_SERVICES"
 
 def tensor2list(tensor):
     return tensor.detach().cpu().tolist()
@@ -57,18 +60,21 @@ def eval_iter_callback(tensors, global_vars):
     if 'req_slot_predictions' not in global_vars:
         global_vars['req_slot_predictions'] = []
 
-    # categorical slots
-    if 'cat_slot_correctness' not in global_vars:
-        global_vars['cat_slot_correctness'] = []
+    # # categorical slots
+    # if 'cat_slot_correctness' not in global_vars:
+    #     global_vars['cat_slot_correctness'] = []
 
-    # noncategorical slots
-    if 'noncat_slot_correctness' not in global_vars:
-        global_vars['noncat_slot_correctness'] = []
+    # # noncategorical slots
+    # if 'noncat_slot_correctness' not in global_vars:
+    #     global_vars['noncat_slot_correctness'] = []
 
-    if 'joint_noncat_accuracy' not in global_vars:
-        global_vars['joint_noncat_accuracy'] = []
-    if 'joint_cat_accuracy' not in global_vars:
-        global_vars['joint_cat_accuracy'] = []
+    # if 'joint_noncat_accuracy' not in global_vars:
+    #     global_vars['joint_noncat_accuracy'] = []
+    # if 'joint_cat_accuracy' not in global_vars:
+    #     global_vars['joint_cat_accuracy'] = []
+
+    if 'average_and_joint_goal_accuracy' not in global_vars:
+        global_vars['average_and_joint_goal_accuracy'] = []
 
     for kv, v in tensors.items():
         # intents
@@ -237,7 +243,7 @@ def eval_iter_callback(tensors, global_vars):
     for i in range(len(noncat_slot_status_labels)):
         if noncat_slot_status_correctness[i]:
             if noncat_slot_status_labels[i] == data_utils.STATUS_ACTIVE:
-                score = 5 * get_noncat_slot_value_match_score(
+                score = get_noncat_slot_value_match_score(
                                     i,
                                     noncat_slot_value_start_labels,
                                     noncat_slot_value_end_labels,
@@ -253,21 +259,18 @@ def eval_iter_callback(tensors, global_vars):
         else:
             score = 0
         noncat_slot_correctness.append(score)
-
-    # combine cat and non cat slots for the frame
-    slots_correctness, is_active_slot, is_cat_slot = combine_cat_noncat_slots(cat_slot_correctness,
+  
+    metrics = get_average_and_joint_goal_accuracy(tensor2list(cat_slot_correctness),
                              noncat_slot_correctness,
-                             cat_batch_ids,
-                             noncat_batch_ids,
-                             active_cat_slots,
-                             active_noncat_slots)
+                             tensor2list(cat_batch_ids),
+                             tensor2list(noncat_batch_ids),
+                             tensor2list(active_cat_slots),
+                             tensor2list(active_noncat_slots))
 
 
-    for list_acc, slot_active, slot_cat in zip(slots_correctness, is_active_slot, is_cat_slot):
-        acc = get_average_and_joint_goal_accuracy(list_acc, slot_active, slot_cat)
-        print (acc)
+    global_vars['average_and_joint_goal_accuracy'].extend(metrics)
 
-def combine_cat_noncat_slots(cat_slot_correctness,
+def get_average_and_joint_goal_accuracy(cat_slot_correctness,
                              noncat_slot_correctness,
                              cat_batch_ids,
                              noncat_batch_ids,
@@ -279,12 +282,10 @@ def combine_cat_noncat_slots(cat_slot_correctness,
 
     batch_ids = sorted(cat_batch.keys() | noncat_batch.keys())
 
-    slot_correctness = []
-    is_active_slot = []
-    is_cat_slot = []
+    metrics = []
+
     cat_start_ind = 0
     noncat_start_ind = 0
-
     for id in batch_ids:
         frame_slots_correctness = []
         is_active = []
@@ -305,11 +306,12 @@ def combine_cat_noncat_slots(cat_slot_correctness,
             is_active.extend(active_noncat_slots[noncat_start_ind:noncat_end_ind])
             is_cat.extend([False] * num_noncat_slots_in_frame)
             noncat_start_ind = noncat_end_ind
-        slot_correctness.append(frame_slots_correctness)
-        is_active_slot.append(is_active)
-        is_cat_slot.append(is_cat)
+ 
+        frame_metrics_dict = _get_average_and_joint_goal_accuracy(frame_slots_correctness, is_active, is_cat)
+        metrics.append(frame_metrics_dict)
+        
+    return metrics
 
-    return slot_correctness, is_active_slot, is_cat_slot
 
 
 def get_noncat_slot_value_match_score(
@@ -383,7 +385,6 @@ def _get_noncat_slot_value(
         slot_value = user_utterances[batch_ids[slot_idx]][ch_start_idx - 1 : ch_end_idx]
     else:
         slot_value = None
-    print (slot_value)
     return slot_value
 
 def get_batch_ids(slot_status_mask):
@@ -396,15 +397,15 @@ def get_batch_ids(slot_status_mask):
     return utterance_batch_ids
 
 
-def get_joint_accuracy(slot_status_mask, slot_correctness_list):
-    batch_ids = tensor2list(get_batch_ids(slot_status_mask))
+# def get_joint_accuracy(slot_status_mask, slot_correctness_list):
+#     batch_ids = tensor2list(get_batch_ids(slot_status_mask))
 
-    joint_accuracy = {}
-    start_idx = 0
-    for k, v in sorted(collections.Counter(batch_ids).items()):
-        joint_accuracy[k] = np.prod(slot_correctness_list[start_idx : start_idx + v])
-        start_idx += v
-    return joint_accuracy
+#     joint_accuracy = {}
+#     start_idx = 0
+#     for k, v in sorted(collections.Counter(batch_ids).items()):
+#         joint_accuracy[k] = np.prod(slot_correctness_list[start_idx : start_idx + v])
+#         start_idx += v
+#     return joint_accuracy
 
 
 
@@ -418,6 +419,32 @@ def eval_epochs_done_callback(global_vars):
     req_slot_predictions = np.asarray(global_vars['req_slot_predictions'], dtype=int)
     requested_slot_status = np.asarray(global_vars['requested_slot_status'], dtype=int)
     req_slot_metrics = compute_f1(req_slot_predictions, requested_slot_status)
+
+    frame_metrics = global_vars['average_and_joint_goal_accuracy']
+    metric_collections = collections.defaultdict(lambda: collections.defaultdict(list))
+    for frame_metric in frame_metrics:
+        for metric_key, metric_value in frame_metric.items():
+            if metric_value != NAN_VAL:
+                metric_collections[ALL_SERVICES][metric_key].append(metric_value)
+
+
+
+    all_metric_aggregate = {}
+    for domain_key, domain_metric_vals in metric_collections.items():
+        domain_metric_aggregate = {}
+        for metric_key, value_list in domain_metric_vals.items():
+            if value_list:
+                # Metrics are macro-averaged across all frames.
+                domain_metric_aggregate[metric_key] = float(np.mean(value_list))
+            else:
+                domain_metric_aggregate[metric_key] = metrics.NAN_VAL
+        all_metric_aggregate[domain_key] = domain_metric_aggregate
+
+    all_metric_aggregate[ALL_SERVICES][ACTIVE_INTENT_ACCURACY] = active_intent_accuracy
+    all_metric_aggregate[ALL_SERVICES][REQUESTED_SLOTS_RECALL] = req_slot_metrics.recall
+    all_metric_aggregate[ALL_SERVICES][REQUESTED_SLOTS_PRECISION] = req_slot_metrics.precision
+    all_metric_aggregate[ALL_SERVICES][REQUESTED_SLOTS_F1] = req_slot_metrics.f1
+
 
     # correctness_cat_slots = np.asarray(global_vars['cat_slot_correctness'], dtype=int)
     # joint_acc, turn_acc = \
@@ -456,24 +483,24 @@ def eval_epochs_done_callback(global_vars):
     #     }
     # }
 
-    # print('\n' + '#' * 50)
-    # for k, v in metrics['all_services'].items():
-    #     print(f'{k}: {v}')
-    # print('#' * 50 + '\n')
+    print('\n' + '#' * 50)
+    for k, v in all_metric_aggregate[ALL_SERVICES].items():
+        print(f'{k}: {v}')
+    print('#' * 50 + '\n')
 
-    # active_intent_acc = metrics.get_active_intent_accuracy(
-    #         frame_ref, frame_hyp)
-    # slot_tagging_f1_scores = metrics.get_slot_tagging_f1(
-    #     frame_ref, frame_hyp, turn_ref["utterance"], service)
-    # requested_slots_f1_scores = metrics.get_requested_slots_f1(
-    #     frame_ref, frame_hyp)
-    # goal_accuracy_dict = metrics.get_average_and_joint_goal_accuracy(
-    #     frame_ref, frame_hyp, service)
+    # # active_intent_acc = metrics.get_active_intent_accuracy(
+    # #         frame_ref, frame_hyp)
+    # # slot_tagging_f1_scores = metrics.get_slot_tagging_f1(
+    # #     frame_ref, frame_hyp, turn_ref["utterance"], service)
+    # # requested_slots_f1_scores = metrics.get_requested_slots_f1(
+    # #     frame_ref, frame_hyp)
+    # # goal_accuracy_dict = metrics.get_average_and_joint_goal_accuracy(
+    # #     frame_ref, frame_hyp, service)
 
-    return 0 #metrics
+    return all_metric_aggregate
 
 
-def get_average_and_joint_goal_accuracy(list_acc, slot_active, slot_cat):
+def _get_average_and_joint_goal_accuracy(list_acc, slot_active, slot_cat):
     """Get average and joint goal accuracies of a frame.
 
   Args:

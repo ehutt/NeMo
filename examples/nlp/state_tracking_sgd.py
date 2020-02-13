@@ -46,7 +46,7 @@ parser.add_argument("--dropout", default=0.1, type=float,
 parser.add_argument("--num_epochs", default=80, type=int,
                     help="Number of epochs for training")
 parser.add_argument("--optimizer_kind", default="adam", type=str)
-parser.add_argument("--train_batch_size", default=8, type=int,
+parser.add_argument("--train_batch_size", default=32, type=int,
                     help="Total batch size for training.")
 parser.add_argument("--eval_batch_size", default=8, type=int,
                     help="Total batch size for eval.")
