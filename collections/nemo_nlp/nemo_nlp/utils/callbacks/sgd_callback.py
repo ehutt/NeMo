@@ -137,11 +137,16 @@ def eval_iter_callback(tensors, global_vars):
     active_intent_onehot_labels = intent_status[num_active_intents.view(-1) > 0.5]
     # get indices of active intents and add 1 to take into account NONE intent
 
-    active_intent_labels = active_intent_onehot_labels.max(dim=1)[1] + 1
+
+    try:
+        active_intent_labels = active_intent_onehot_labels.max(dim=1)[1] + 1
+        active_intent_labels = tensor2list(active_intent_labels)
+    except RuntimeError:
+        active_intent_labels = []
 
     active_intent_preds = torch.argmax(logit_intent_status, 1)[num_active_intents.view(-1) > 0.5]
 
-    global_vars['active_intent_labels'].extend(tensor2list(active_intent_labels))
+    global_vars['active_intent_labels'].extend(active_intent_labels)
     global_vars['active_intent_preds'].extend(tensor2list(active_intent_preds))
 
     '''
@@ -414,8 +419,11 @@ def eval_epochs_done_callback(global_vars):
     active_intent_labels = np.asarray(global_vars['active_intent_labels'])
     active_intent_preds = np.asarray(global_vars['active_intent_preds'])
 
-    active_intent_accuracy = sum(active_intent_labels == active_intent_preds) / len(active_intent_labels)
-
+    if len(active_intent_labels) > 0:
+        active_intent_accuracy = sum(active_intent_labels == active_intent_preds) / len(active_intent_labels)
+    else:
+        active_intent_accuracy = 0
+        
     req_slot_predictions = np.asarray(global_vars['req_slot_predictions'], dtype=int)
     requested_slot_status = np.asarray(global_vars['requested_slot_status'], dtype=int)
     req_slot_metrics = compute_f1(req_slot_predictions, requested_slot_status)

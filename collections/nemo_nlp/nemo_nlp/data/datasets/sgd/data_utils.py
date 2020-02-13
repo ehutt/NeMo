@@ -53,9 +53,14 @@ STATUS_ACTIVE = 1
 STATUS_DONTCARE = 2
 
 FILE_RANGES = {
+    # "dstc8_single_domain": {
+    #     "train": range(1, 44),
+    #     "dev": range(1, 8),
+    #     "test": range(1, 12)
+    # },
     "dstc8_single_domain": {
-        "train": range(1, 44),
-        "dev": range(1, 8),
+        "train": range(1, 5),
+        "dev": range(1, 5),
         "test": range(1, 12)
     },
     "dstc8_multi_domain": {
@@ -545,7 +550,7 @@ class InputExample(object):
         self.end_char_idx = end_char_idx
 
         self.user_utterances = user_utterance
-        serf.system_utterance = system_utterance
+        self.system_utterance = system_utterance
 
     def make_copy_with_utterance_features(self):
         """Make a copy of the current example with utterance features."""

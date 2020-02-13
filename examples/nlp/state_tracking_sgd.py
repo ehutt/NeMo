@@ -87,7 +87,7 @@ parser.add_argument("--overwrite_schema_emb_files", action="store_true",
                     help="Whether to generate a new Tf.record file saving the dialogue examples.")
 parser.add_argument("--dialogues_example_dir", type=str, required=True,
                     help="Directory where preprocessed DSTC8 dialogues are stored.")
-parser.add_argument("--overwrite_dial_file", action="store_true",
+parser.add_argument("--overwrite_dial_files", action="store_true",
                     help="Whether to generate a new file saving the dialogue examples.")
 parser.add_argument("--shuffle", type=bool, default=False,
                     help="Whether to shuffle training data")
@@ -158,7 +158,7 @@ dialogues_processor = data_utils.Dstc8DataProcessor(
 train_datalayer = nemo_nlp.SGDDataLayer(
     task_name=args.task_name,
     dialogues_example_dir=args.dialogues_example_dir,
-    overwrite_dial_file=args.overwrite_dial_file,
+    overwrite_dial_file=args.overwrite_dial_files,
     dataset_split='train',
     schema_emb_processor=schema_preprocessor,
     dialogues_processor=dialogues_processor,
@@ -229,7 +229,7 @@ loss = dst_loss(logit_intent_status=logit_intent_status,
 eval_datalayer = nemo_nlp.SGDDataLayer(
     task_name=args.task_name,
     dialogues_example_dir=args.dialogues_example_dir,
-    overwrite_dial_file=args.overwrite_dial_file,
+    overwrite_dial_file=args.overwrite_dial_files,
     dataset_split=args.eval_dataset,
     schema_emb_processor=schema_preprocessor,
     dialogues_processor=dialogues_processor,
