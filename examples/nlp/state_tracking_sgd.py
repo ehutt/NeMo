@@ -41,6 +41,8 @@ parser.add_argument("--max_seq_length", default=80, type=int,
                     "than this will be padded.")
 parser.add_argument("--dropout", default=0.1, type=float,
                     help="Dropout rate for BERT representations.")
+parser.add_argument("--pretrained_model_name", default="bert-large-cased", type=str,
+                    help="Pretrained BERT model")
 
 # Hyperparameters and optimization related flags.
 parser.add_argument("--num_epochs", default=80, type=int,
@@ -121,7 +123,7 @@ nf = nemo.core.NeuralModuleFactory(backend=nemo.core.Backend.PyTorch,
 bert_init_ckpt = os.path.join(args.bert_ckpt_dir, "bert_model.ckpt")
 
 pretrained_bert_model = nemo_nlp.huggingface.BERT(
-    pretrained_model_name="bert-base-cased", factory=nf)
+    pretrained_model_name=args.pretrained_model_name, factory=nf)
 # hidden_size = pretrained_bert_model.local_parameters["hidden_size"]
 
 tokenization.validate_case_matches_checkpoint(
@@ -303,10 +305,24 @@ train_callback = nemo.core.SimpleLossLoggerCallback(
     get_tb_values=lambda x: [["loss", x[0]]],
     tb_writer=nf.tb_writer)
 
+
+# we'll write predictions to file in DSTC8 format during evaluation callback
+input_json_files = [os.path.join(args.data_dir, args.eval_dataset, 'dialogues_{:03d}.json'.format(fid))
+        for fid in data_utils.FILE_RANGES[args.task_name][args.eval_dataset]]
+    
+schema_json_file = os.path.join(args.data_dir, args.eval_dataset, 'schema.json')
+
+    
+# Write predictions to file in DSTC8 format.
+prediction_dir = os.path.join(args.work_dir, 'predictions', 'pred_res_{}_{}'.format(args.eval_dataset, args.task_name))
+
+if not os.path.exists(prediction_dir):
+    os.makedirs(prediction_dir)
+
 eval_callback = nemo.core.EvaluatorCallback(
     eval_tensors=eval_tensors,
     user_iter_callback=lambda x, y: eval_iter_callback(x, y),
-    user_epochs_done_callback=lambda x: eval_epochs_done_callback(x),
+    user_epochs_done_callback=lambda x: eval_epochs_done_callback(x, input_json_files, schema_json_file, prediction_dir),
     tb_writer=nf.tb_writer,
     eval_step=steps_per_epoch)
 

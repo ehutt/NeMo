@@ -5,6 +5,7 @@ import collections
 
 import nemo_nlp
 import nemo_nlp.data.datasets.sgd.data_utils as data_utils
+import nemo_nlp.data.datasets.sgd.prediction_utils as pred_utils
 import numpy as np
 import torch
 from fuzzywuzzy import fuzz
@@ -48,98 +49,32 @@ def tensor2list(tensor):
 
 
 def eval_iter_callback(tensors, global_vars):
-    # intents
-    if 'intent_status' not in global_vars:
-        global_vars['active_intent_labels'] = []
-    if 'intent_status' not in global_vars:
-        global_vars['active_intent_preds'] = []
+    global_vars_keys = ['example_id',
+                        'service_id',
+                        'is_real_example',
+                        'intent_status',
+                        'req_slot_status',
+                        'cat_slot_status',
+                        'cat_slot_value',
+                        'noncat_slot_status',
+                        'noncat_slot_start',
+                        'noncat_slot_end',
+                        'noncat_alignment_start',
+                        'noncat_alignment_end']
 
-    # requested slots
-    if 'requested_slot_status' not in global_vars:
-        global_vars['requested_slot_status'] = []
-    if 'req_slot_predictions' not in global_vars:
-        global_vars['req_slot_predictions'] = []
+    for key in global_vars_keys:
+        if key not in global_vars:
+            global_vars[key] = []
 
-    # # categorical slots
-    # if 'cat_slot_correctness' not in global_vars:
-    #     global_vars['cat_slot_correctness'] = []
-
-    # # noncategorical slots
-    # if 'noncat_slot_correctness' not in global_vars:
-    #     global_vars['noncat_slot_correctness'] = []
-
-    # if 'joint_noncat_accuracy' not in global_vars:
-    #     global_vars['joint_noncat_accuracy'] = []
-    # if 'joint_cat_accuracy' not in global_vars:
-    #     global_vars['joint_cat_accuracy'] = []
-
-    if 'average_and_joint_goal_accuracy' not in global_vars:
-        global_vars['average_and_joint_goal_accuracy'] = []
-
-    for kv, v in tensors.items():
-        if kv.startswith('example_id'):
-            example_ids = v[0]
-        elif kv.startswith('service_id'):
-            service_ids = v[0]
-        elif kv.startswith('is_real_example'):
-            is_real_example = v[0]
-
-        # intents
-        elif kv.startswith('logit_intent_status'):
-            logit_intent_status = v[0]
-        elif kv.startswith('intent_status'):
-            intent_status = v[0]
-
-        # requested slots
-        elif kv.startswith('logit_req_slot_status'):
-            logit_req_slot_status = v[0]
-        elif kv.startswith('requested_slot_status'):
-            requested_slot_status = v[0]
-        elif kv.startswith('req_slot_mask'):
-            requested_slot_mask = v[0]
-
-        # categorical slots
-        elif kv.startswith('logit_cat_slot_status'):
-            logit_cat_slot_status = v[0]
-        elif kv.startswith('logit_cat_slot_value'):
-            logit_cat_slot_value = v[0]
-        elif kv.startswith('categorical_slot_status'):
-            categorical_slot_status = v[0]
-        elif kv.startswith('num_categorical_slots'):
-            num_categorical_slots = v[0]
-        elif kv.startswith('categorical_slot_values'):
-            categorical_slot_values = v[0]
-        elif kv.startswith('cat_slot_values_mask'):
-            cat_slot_values_mask = v[0]
-
-        # noncategorical slots
-        elif kv.startswith('logit_noncat_slot_status'):
-            logit_noncat_slot_status = v[0]
-        elif kv.startswith('logit_noncat_slot_start'):
-            logit_noncat_slot_start = v[0]
-        elif kv.startswith('logit_noncat_slot_end'):
-            logit_noncat_slot_end = v[0]
-        elif kv.startswith('noncategorical_slot_status'):
-            noncategorical_slot_status = v[0]
-        elif kv.startswith('num_noncategorical_slots'):
-            num_noncategorical_slots = v[0]
-        elif kv.startswith('noncategorical_slot_value_start'):
-            noncategorical_slot_value_start = v[0]
-        elif kv.startswith('noncategorical_slot_value_end'):
-            noncategorical_slot_value_end = v[0]
-
-        elif kv.startswith('start_char_idx'):
-            start_char_idxs = v[0]
-        elif kv.startswith('end_char_idx'):
-            end_char_idxs = v[0]
-
-        elif kv.startswith('user_utterance'):
-            user_utterances = v[0]
+    output = {}
+    for k, v in tensors.items():
+        ind = k.find('~~~')
+        if ind != -1:
+            output[k[:ind]] = v[0]
+    
+    import pdb; pdb.set_trace()
 
     predictions = {}
-    import pdb; pdb.set_trace()
-    print()
-
     predictions = {
         "example_id": example_ids,
         "service_id": service_ids,
@@ -159,39 +94,6 @@ def eval_iter_callback(tensors, global_vars):
 
     # For non-categorical slots, the status of each slot and the indices for spans are output.
     predictions["noncat_slot_status"] = torch.argmax(logit_noncat_slot_status, axis=-1)
-    start_scores = torch.nn.softmax(outputs["logit_noncat_slot_start"], axis=-1)
-    end_scores = tf.nn.softmax(outputs["logit_noncat_slot_end"], axis=-1)
-    _, max_num_slots, max_num_tokens = end_scores.get_shape().as_list()
-    batch_size = tf.shape(end_scores)[0]
-
-def define_predictions(self, features, outputs):
-    """Define model predictions."""
-    predictions = {
-        "example_id": features["example_id"],
-        "service_id": features["service_id"],
-        "is_real_example": features["is_real_example"],
-    }
-    # Scores are output for each intent.
-    # Note that the intent indices are shifted by 1 to account for NONE intent.
-    predictions["intent_status"] = tf.argmax(
-        outputs["logit_intent_status"], axis=-1)
-
-    # Scores are output for each requested slot.
-    predictions["req_slot_status"] = tf.sigmoid(
-        outputs["logit_req_slot_status"])
-
-    # For categorical slots, the status of each slot and the predicted value are
-    # output.
-    predictions["cat_slot_status"] = tf.argmax(
-        outputs["logit_cat_slot_status"], axis=-1)
-    predictions["cat_slot_value"] = tf.argmax(
-        outputs["logit_cat_slot_value"], axis=-1)
-
-    # For non-categorical slots, the status of each slot and the indices for
-    # spans are output.
-    predictions["noncat_slot_status"] = tf.argmax(
-        outputs["logit_noncat_slot_status"], axis=-1)
-
     softmax = torch.nn.Softmax()
     start_scores = softmax(logit_noncat_slot_start)
     end_scores = softmax(logit_noncat_slot_end)
@@ -200,24 +102,22 @@ def define_predictions(self, features, outputs):
     # Find the span with the maximum sum of scores for start and end indices.
     total_scores = torch.unsqueeze(start_scores, axis=3) + torch.unsqueeze(end_scores, axis=2)
     # Mask out scores where start_index > end_index.
-    start_idx = tf.reshape(tf.range(max_num_tokens), [1, 1, -1, 1])
-    end_idx = tf.reshape(tf.range(max_num_tokens), [1, 1, 1, -1])
-    invalid_index_mask = tf.tile((start_idx > end_idx),
-                                 [batch_size, max_num_slots, 1, 1])
-    total_scores = tf.where(invalid_index_mask, tf.zeros_like(total_scores),
-                            total_scores)
-    max_span_index = tf.argmax(
-        tf.reshape(total_scores, [-1, max_num_slots, max_num_tokens**2]),
-        axis=-1)
-    span_start_index = tf.floordiv(max_span_index, max_num_tokens)
-    span_end_index = tf.floormod(max_span_index, max_num_tokens)
+    device = total_scores.device
+    start_idx = torch.arange(max_num_tokens).view(1, 1, -1, 1).to(device)
+    end_idx = torch.arange(max_num_tokens).view(1, 1, 1, -1).to(device)
+    invalid_index_mask = (start_idx > end_idx).repeat(batch_size, max_num_noncat_slots, 1, 1)
+    total_scores = torch.where(invalid_index_mask, torch.zeros(total_scores.size()).to(device), total_scores)
+    max_span_index = torch.argmax(total_scores.view(-1, max_num_noncat_slots, max_num_tokens**2), axis=-1)
+    span_start_index = torch.div(max_span_index, max_num_tokens)
+    span_end_index = torch.fmod(max_span_index, max_num_tokens)
     predictions["noncat_slot_start"] = span_start_index
     predictions["noncat_slot_end"] = span_end_index
-    # Add inverse alignments.
-    predictions["noncat_alignment_start"] = features["noncat_alignment_start"]
-    predictions["noncat_alignment_end"] = features["noncat_alignment_end"]
 
-    return predictions
+    # Add inverse alignments.
+    predictions["noncat_alignment_start"] = start_char_idxs
+    predictions["noncat_alignment_end"] = end_char_idxs
+
+
 
 
 # def eval_iter_callback(tensors, global_vars):
@@ -588,7 +488,14 @@ def get_batch_ids(slot_status_mask):
 
 
 
-def eval_epochs_done_callback(global_vars):
+def eval_epochs_done_callback(global_vars,
+                              input_json_files,
+                              schema_json_file,
+                              prediction_dir):
+    
+    pred_utils.write_predictions_to_file(predictions, input_json_files,
+                                   schema_json_file, prediction_dir)
+
     active_intent_labels = np.asarray(global_vars['active_intent_labels'])
     active_intent_preds = np.asarray(global_vars['active_intent_preds'])
 
