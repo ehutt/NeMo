@@ -77,8 +77,15 @@ def eval_iter_callback(tensors, global_vars):
         global_vars['average_and_joint_goal_accuracy'] = []
 
     for kv, v in tensors.items():
+        if kv.startswith('example_id'):
+            example_ids = v[0]
+        elif kv.startswith('service_id'):
+            service_ids = v[0]
+        elif kv.startswith('is_real_example'):
+            is_real_example = v[0]
+
         # intents
-        if kv.startswith('logit_intent_status'):
+        elif kv.startswith('logit_intent_status'):
             logit_intent_status = v[0]
         elif kv.startswith('intent_status'):
             intent_status = v[0]
@@ -129,151 +136,317 @@ def eval_iter_callback(tensors, global_vars):
         elif kv.startswith('user_utterance'):
             user_utterances = v[0]
 
-    num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
+    predictions = {}
+    import pdb; pdb.set_trace()
+    print()
 
-    # the intents represented as a one hot vectors
-    # logits shape [batch, max_num_intents + 1] where 1 is for NONE intent
+    predictions = {
+        "example_id": example_ids,
+        "service_id": service_ids,
+        "is_real_example": is_real_example,
+    }
 
-    active_intent_onehot_labels = intent_status[num_active_intents.view(-1) > 0.5]
-    # get indices of active intents and add 1 to take into account NONE intent
+    # Scores are output for each intent.
+    # Note that the intent indices are shifted by 1 to account for NONE intent.
+    predictions['intent_status'] = torch.argmax(logit_intent_status, -1)
+
+    # Scores are output for each requested slot.
+    predictions["req_slot_status"] = torch.nn.Sigmoid()(logit_req_slot_status)
+
+    # For categorical slots, the status of each slot and the predicted value are output.
+    predictions["cat_slot_status"] = torch.argmax(logit_cat_slot_status, axis=-1)
+    predictions["cat_slot_value"] = torch.argmax(logit_cat_slot_value, axis=-1)
+
+    # For non-categorical slots, the status of each slot and the indices for spans are output.
+    predictions["noncat_slot_status"] = torch.argmax(logit_noncat_slot_status, axis=-1)
+    start_scores = torch.nn.softmax(outputs["logit_noncat_slot_start"], axis=-1)
+    end_scores = tf.nn.softmax(outputs["logit_noncat_slot_end"], axis=-1)
+    _, max_num_slots, max_num_tokens = end_scores.get_shape().as_list()
+    batch_size = tf.shape(end_scores)[0]
+
+def define_predictions(self, features, outputs):
+    """Define model predictions."""
+    predictions = {
+        "example_id": features["example_id"],
+        "service_id": features["service_id"],
+        "is_real_example": features["is_real_example"],
+    }
+    # Scores are output for each intent.
+    # Note that the intent indices are shifted by 1 to account for NONE intent.
+    predictions["intent_status"] = tf.argmax(
+        outputs["logit_intent_status"], axis=-1)
+
+    # Scores are output for each requested slot.
+    predictions["req_slot_status"] = tf.sigmoid(
+        outputs["logit_req_slot_status"])
+
+    # For categorical slots, the status of each slot and the predicted value are
+    # output.
+    predictions["cat_slot_status"] = tf.argmax(
+        outputs["logit_cat_slot_status"], axis=-1)
+    predictions["cat_slot_value"] = tf.argmax(
+        outputs["logit_cat_slot_value"], axis=-1)
+
+    # For non-categorical slots, the status of each slot and the indices for
+    # spans are output.
+    predictions["noncat_slot_status"] = tf.argmax(
+        outputs["logit_noncat_slot_status"], axis=-1)
+
+    softmax = torch.nn.Softmax()
+    start_scores = softmax(logit_noncat_slot_start)
+    end_scores = softmax(logit_noncat_slot_end)
+
+    batch_size, max_num_noncat_slots, max_num_tokens = end_scores.size()
+    # Find the span with the maximum sum of scores for start and end indices.
+    total_scores = torch.unsqueeze(start_scores, axis=3) + torch.unsqueeze(end_scores, axis=2)
+    # Mask out scores where start_index > end_index.
+    start_idx = tf.reshape(tf.range(max_num_tokens), [1, 1, -1, 1])
+    end_idx = tf.reshape(tf.range(max_num_tokens), [1, 1, 1, -1])
+    invalid_index_mask = tf.tile((start_idx > end_idx),
+                                 [batch_size, max_num_slots, 1, 1])
+    total_scores = tf.where(invalid_index_mask, tf.zeros_like(total_scores),
+                            total_scores)
+    max_span_index = tf.argmax(
+        tf.reshape(total_scores, [-1, max_num_slots, max_num_tokens**2]),
+        axis=-1)
+    span_start_index = tf.floordiv(max_span_index, max_num_tokens)
+    span_end_index = tf.floormod(max_span_index, max_num_tokens)
+    predictions["noncat_slot_start"] = span_start_index
+    predictions["noncat_slot_end"] = span_end_index
+    # Add inverse alignments.
+    predictions["noncat_alignment_start"] = features["noncat_alignment_start"]
+    predictions["noncat_alignment_end"] = features["noncat_alignment_end"]
+
+    return predictions
 
 
-    try:
-        active_intent_labels = active_intent_onehot_labels.max(dim=1)[1] + 1
-        active_intent_labels = tensor2list(active_intent_labels)
-    except RuntimeError:
-        active_intent_labels = []
+# def eval_iter_callback(tensors, global_vars):
+#     # intents
+#     if 'intent_status' not in global_vars:
+#         global_vars['active_intent_labels'] = []
+#     if 'intent_status' not in global_vars:
+#         global_vars['active_intent_preds'] = []
 
-    active_intent_preds = torch.argmax(logit_intent_status, 1)[num_active_intents.view(-1) > 0.5]
+#     # requested slots
+#     if 'requested_slot_status' not in global_vars:
+#         global_vars['requested_slot_status'] = []
+#     if 'req_slot_predictions' not in global_vars:
+#         global_vars['req_slot_predictions'] = []
 
-    global_vars['active_intent_labels'].extend(active_intent_labels)
-    global_vars['active_intent_preds'].extend(tensor2list(active_intent_preds))
+#     # # categorical slots
+#     # if 'cat_slot_correctness' not in global_vars:
+#     #     global_vars['cat_slot_correctness'] = []
 
-    '''
-    num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
-    tensor_ones = torch.ones(num_active_intents.size(), dtype=torch.long)
+#     # # noncategorical slots
+#     # if 'noncat_slot_correctness' not in global_vars:
+#     #     global_vars['noncat_slot_correctness'] = []
+
+#     # if 'joint_noncat_accuracy' not in global_vars:
+#     #     global_vars['joint_noncat_accuracy'] = []
+#     # if 'joint_cat_accuracy' not in global_vars:
+#     #     global_vars['joint_cat_accuracy'] = []
+
+#     if 'average_and_joint_goal_accuracy' not in global_vars:
+#         global_vars['average_and_joint_goal_accuracy'] = []
+
+#     for kv, v in tensors.items():
+#         # intents
+#         if kv.startswith('logit_intent_status'):
+#             logit_intent_status = v[0]
+#         elif kv.startswith('intent_status'):
+#             intent_status = v[0]
+
+#         # requested slots
+#         elif kv.startswith('logit_req_slot_status'):
+#             logit_req_slot_status = v[0]
+#         elif kv.startswith('requested_slot_status'):
+#             requested_slot_status = v[0]
+#         elif kv.startswith('req_slot_mask'):
+#             requested_slot_mask = v[0]
+
+#         # categorical slots
+#         elif kv.startswith('logit_cat_slot_status'):
+#             logit_cat_slot_status = v[0]
+#         elif kv.startswith('logit_cat_slot_value'):
+#             logit_cat_slot_value = v[0]
+#         elif kv.startswith('categorical_slot_status'):
+#             categorical_slot_status = v[0]
+#         elif kv.startswith('num_categorical_slots'):
+#             num_categorical_slots = v[0]
+#         elif kv.startswith('categorical_slot_values'):
+#             categorical_slot_values = v[0]
+#         elif kv.startswith('cat_slot_values_mask'):
+#             cat_slot_values_mask = v[0]
+
+#         # noncategorical slots
+#         elif kv.startswith('logit_noncat_slot_status'):
+#             logit_noncat_slot_status = v[0]
+#         elif kv.startswith('logit_noncat_slot_start'):
+#             logit_noncat_slot_start = v[0]
+#         elif kv.startswith('logit_noncat_slot_end'):
+#             logit_noncat_slot_end = v[0]
+#         elif kv.startswith('noncategorical_slot_status'):
+#             noncategorical_slot_status = v[0]
+#         elif kv.startswith('num_noncategorical_slots'):
+#             num_noncategorical_slots = v[0]
+#         elif kv.startswith('noncategorical_slot_value_start'):
+#             noncategorical_slot_value_start = v[0]
+#         elif kv.startswith('noncategorical_slot_value_end'):
+#             noncategorical_slot_value_end = v[0]
+
+#         elif kv.startswith('start_char_idx'):
+#             start_char_idxs = v[0]
+#         elif kv.startswith('end_char_idx'):
+#             end_char_idxs = v[0]
+
+#         elif kv.startswith('user_utterance'):
+#             user_utterances = v[0]
+
+#     num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
+
+#     # the intents represented as a one hot vectors
+#     # logits shape [batch, max_num_intents + 1] where 1 is for NONE intent
+
+#     active_intent_onehot_labels = intent_status[num_active_intents.view(-1) > 0.5]
+#     # get indices of active intents and add 1 to take into account NONE intent
+
+
+#     try:
+#         active_intent_labels = active_intent_onehot_labels.max(dim=1)[1] + 1
+#         active_intent_labels = tensor2list(active_intent_labels)
+#     except RuntimeError:
+#         active_intent_labels = []
+
+#     active_intent_preds = torch.argmax(logit_intent_status, 1)[num_active_intents.view(-1) > 0.5]
+
+#     global_vars['active_intent_labels'].extend(active_intent_labels)
+#     global_vars['active_intent_preds'].extend(tensor2list(active_intent_preds))
+
+#     '''
+#     num_active_intents = torch.sum(intent_status, axis=1).unsqueeze(1)
+#     tensor_ones = torch.ones(num_active_intents.size(), dtype=torch.long)
  
-    if num_active_intents.is_cuda:
-        tensor_ones = tensor_ones.cuda()
+#     if num_active_intents.is_cuda:
+#         tensor_ones = tensor_ones.cuda()
  
-    # adding label for NONE intent - 1 if no acive intent for the dialogue
-    none_intent_label = tensor_ones - num_active_intents
-    onehot_intent_labels = torch.cat([none_intent_label, intent_status], axis=1)
-    _, intent_labels = onehot_intent_labels.max(dim=1)
+#     # adding label for NONE intent - 1 if no acive intent for the dialogue
+#     none_intent_label = tensor_ones - num_active_intents
+#     onehot_intent_labels = torch.cat([none_intent_label, intent_status], axis=1)
+#     _, intent_labels = onehot_intent_labels.max(dim=1)
 
-    '''
+#     '''
 
-    # # mask example with no noncategorical slots
-    # noncat_slots_mask = torch.sum(noncategorical_slot_status, 1) > 0
+#     # # mask example with no noncategorical slots
+#     # noncat_slots_mask = torch.sum(noncategorical_slot_status, 1) > 0
 
-    # get req slots predictions
-    req_slot_predictions = torch.nn.Sigmoid()(logit_req_slot_status)
-    # mask examples with padded slots
-    req_slot_predictions = req_slot_predictions.view(-1)[requested_slot_mask]
-    requested_slot_status = requested_slot_status.view(-1)[requested_slot_mask]
+#     # get req slots predictions
+#     req_slot_predictions = torch.nn.Sigmoid()(logit_req_slot_status)
+#     # mask examples with padded slots
+#     req_slot_predictions = req_slot_predictions.view(-1)[requested_slot_mask]
+#     requested_slot_status = requested_slot_status.view(-1)[requested_slot_mask]
 
-    ones = req_slot_predictions.new_ones(req_slot_predictions.size())
-    zeros = req_slot_predictions.new_zeros(req_slot_predictions.size())
-    req_slot_predictions = torch.where(req_slot_predictions > REQ_SLOT_THRESHOLD, ones, zeros)
+#     ones = req_slot_predictions.new_ones(req_slot_predictions.size())
+#     zeros = req_slot_predictions.new_zeros(req_slot_predictions.size())
+#     req_slot_predictions = torch.where(req_slot_predictions > REQ_SLOT_THRESHOLD, ones, zeros)
 
-    global_vars['req_slot_predictions'].extend(tensor2list(req_slot_predictions))
-    global_vars['requested_slot_status'].extend(tensor2list(requested_slot_status))
+#     global_vars['req_slot_predictions'].extend(tensor2list(req_slot_predictions))
+#     global_vars['requested_slot_status'].extend(tensor2list(requested_slot_status))
 
-    # list of corectness scores, each corresponding to one slot in the
-    # service. The score is a float either 0.0 or 1.0 for categorical slot,
-    # and in range [0.0, 1.0] for non-categorical slot.
+#     # list of corectness scores, each corresponding to one slot in the
+#     # service. The score is a float either 0.0 or 1.0 for categorical slot,
+#     # and in range [0.0, 1.0] for non-categorical slot.
 
-    # Categorical slots
-    # mask unused slots for the service
-    max_num_cat_slots = categorical_slot_status.size()[-1]
-    max_num_slots_matrix = torch.arange(0, max_num_cat_slots, 1).to(num_categorical_slots.device)
-    cat_slot_status_mask = max_num_slots_matrix < torch.unsqueeze(num_categorical_slots, dim=-1)
+#     # Categorical slots
+#     # mask unused slots for the service
+#     max_num_cat_slots = categorical_slot_status.size()[-1]
+#     max_num_slots_matrix = torch.arange(0, max_num_cat_slots, 1).to(num_categorical_slots.device)
+#     cat_slot_status_mask = max_num_slots_matrix < torch.unsqueeze(num_categorical_slots, dim=-1)
 
-    cat_slot_status_preds = torch.argmax(logit_cat_slot_status, -1)[cat_slot_status_mask]
-    cat_slot_values_preds = torch.argmax(logit_cat_slot_value, -1)[cat_slot_status_mask]
-    cat_slot_status_labels = categorical_slot_status[cat_slot_status_mask]
-    cat_slot_values_labels = categorical_slot_values[cat_slot_status_mask]
+#     cat_slot_status_preds = torch.argmax(logit_cat_slot_status, -1)[cat_slot_status_mask]
+#     cat_slot_values_preds = torch.argmax(logit_cat_slot_value, -1)[cat_slot_status_mask]
+#     cat_slot_status_labels = categorical_slot_status[cat_slot_status_mask]
+#     cat_slot_values_labels = categorical_slot_values[cat_slot_status_mask]
 
-    # slots are predicted correctly if the both the slot value and the slot status are correct
+#     # slots are predicted correctly if the both the slot value and the slot status are correct
 
 
 
-    # determine if the slot status was predicted correctly
-    cat_slot_status_correctness = cat_slot_status_labels == cat_slot_status_preds
+#     # determine if the slot status was predicted correctly
+#     cat_slot_status_correctness = cat_slot_status_labels == cat_slot_status_preds
 
-    # evaluate cat slot prediction only if slot is active
-    # if predicted slot status = 0,2 (off/doncare) but the true status is 1 (active) => categorical correctness
-    # for such example is 0
-    active_cat_slots = cat_slot_status_labels == data_utils.STATUS_ACTIVE
-    active_cat_slot_status_correctness = cat_slot_status_correctness * (active_cat_slots)
-    cat_slot_values_correctness = (cat_slot_values_labels == cat_slot_values_preds).type(torch.int)
+#     # evaluate cat slot prediction only if slot is active
+#     # if predicted slot status = 0,2 (off/doncare) but the true status is 1 (active) => categorical correctness
+#     # for such example is 0
+#     active_cat_slots = cat_slot_status_labels == data_utils.STATUS_ACTIVE
+#     active_cat_slot_status_correctness = cat_slot_status_correctness * (active_cat_slots)
+#     cat_slot_values_correctness = (cat_slot_values_labels == cat_slot_values_preds).type(torch.int)
 
-    cat_slot_correctness = torch.where(
-        active_cat_slot_status_correctness, cat_slot_values_correctness, cat_slot_status_correctness.type(torch.int)
-    )
+#     cat_slot_correctness = torch.where(
+#         active_cat_slot_status_correctness, cat_slot_values_correctness, cat_slot_status_correctness.type(torch.int)
+#     )
     
-    cat_batch_ids = get_batch_ids(cat_slot_status_mask)
+#     cat_batch_ids = get_batch_ids(cat_slot_status_mask)
 
-    # Noncategorical slots
-    max_num_noncat_slots = noncategorical_slot_status.size()[-1]
-    max_num_noncat_slots_matrix = torch.arange(0, max_num_noncat_slots, 1).to(num_noncategorical_slots.device)
-    noncat_slot_status_mask = max_num_noncat_slots_matrix < torch.unsqueeze(num_noncategorical_slots, dim=-1)
+#     # Noncategorical slots
+#     max_num_noncat_slots = noncategorical_slot_status.size()[-1]
+#     max_num_noncat_slots_matrix = torch.arange(0, max_num_noncat_slots, 1).to(num_noncategorical_slots.device)
+#     noncat_slot_status_mask = max_num_noncat_slots_matrix < torch.unsqueeze(num_noncategorical_slots, dim=-1)
 
-    noncat_slot_status_preds = torch.argmax(logit_noncat_slot_status, -1)[noncat_slot_status_mask]
-    noncat_slot_value_start_preds = torch.argmax(logit_noncat_slot_start, -1)[noncat_slot_status_mask]
-    noncat_slot_value_end_preds = torch.argmax(logit_noncat_slot_end, -1)[noncat_slot_status_mask]
+#     noncat_slot_status_preds = torch.argmax(logit_noncat_slot_status, -1)[noncat_slot_status_mask]
+#     noncat_slot_value_start_preds = torch.argmax(logit_noncat_slot_start, -1)[noncat_slot_status_mask]
+#     noncat_slot_value_end_preds = torch.argmax(logit_noncat_slot_end, -1)[noncat_slot_status_mask]
 
-    noncat_slot_status_labels = noncategorical_slot_status[noncat_slot_status_mask]
-    noncat_slot_value_start_labels = noncategorical_slot_value_start[noncat_slot_status_mask]
-    noncat_slot_value_end_labels = noncategorical_slot_value_end[noncat_slot_status_mask]
+#     noncat_slot_status_labels = noncategorical_slot_status[noncat_slot_status_mask]
+#     noncat_slot_value_start_labels = noncategorical_slot_value_start[noncat_slot_status_mask]
+#     noncat_slot_value_end_labels = noncategorical_slot_value_end[noncat_slot_status_mask]
 
-    # slots with correctly predicted status
-    noncat_slot_status_correctness = noncat_slot_status_labels == noncat_slot_status_preds
-    # slots with correctly predicted ACTIVE status
-    active_noncat_slots = noncat_slot_status_labels == data_utils.STATUS_ACTIVE
-    active_noncat_slot_status_correctness = noncat_slot_status_correctness * (active_noncat_slots)
+#     # slots with correctly predicted status
+#     noncat_slot_status_correctness = noncat_slot_status_labels == noncat_slot_status_preds
+#     # slots with correctly predicted ACTIVE status
+#     active_noncat_slots = noncat_slot_status_labels == data_utils.STATUS_ACTIVE
+#     active_noncat_slot_status_correctness = noncat_slot_status_correctness * (active_noncat_slots)
     
 
-    ########################################
-    # remove:
-    # noncat_slot_status_preds = noncat_slot_status_labels
-    # noncat_slot_value_start_preds = noncat_slot_value_start_labels
-    # noncat_slot_value_end_preds = noncat_slot_value_end_labels
-    system_utterances = None
-    ########################################
+#     ########################################
+#     # remove:
+#     # noncat_slot_status_preds = noncat_slot_status_labels
+#     # noncat_slot_value_start_preds = noncat_slot_value_start_labels
+#     # noncat_slot_value_end_preds = noncat_slot_value_end_labels
+#     system_utterances = None
+#     ########################################
 
 
-    noncat_batch_ids = get_batch_ids(noncat_slot_status_mask)
-    noncat_slot_correctness = []
-    for i in range(len(noncat_slot_status_labels)):
-        if noncat_slot_status_correctness[i]:
-            if noncat_slot_status_labels[i] == data_utils.STATUS_ACTIVE:
-                score = get_noncat_slot_value_match_score(
-                                    i,
-                                    noncat_slot_value_start_labels,
-                                    noncat_slot_value_end_labels,
-                                    noncat_slot_value_start_preds,
-                                    noncat_slot_value_end_preds,
-                                    start_char_idxs,
-                                    end_char_idxs,
-                                    noncat_batch_ids,
-                                    user_utterances,
-                                    system_utterances)
-            else: # correctly predicted not ACTIVE status
-                score = 1
-        else:
-            score = 0
-        noncat_slot_correctness.append(score)
+#     noncat_batch_ids = get_batch_ids(noncat_slot_status_mask)
+#     noncat_slot_correctness = []
+#     for i in range(len(noncat_slot_status_labels)):
+#         if noncat_slot_status_correctness[i]:
+#             if noncat_slot_status_labels[i] == data_utils.STATUS_ACTIVE:
+#                 score = get_noncat_slot_value_match_score(
+#                                     i,
+#                                     noncat_slot_value_start_labels,
+#                                     noncat_slot_value_end_labels,
+#                                     noncat_slot_value_start_preds,
+#                                     noncat_slot_value_end_preds,
+#                                     start_char_idxs,
+#                                     end_char_idxs,
+#                                     noncat_batch_ids,
+#                                     user_utterances,
+#                                     system_utterances)
+#             else: # correctly predicted not ACTIVE status
+#                 score = 1
+#         else:
+#             score = 0
+#         noncat_slot_correctness.append(score)
   
-    metrics = get_average_and_joint_goal_accuracy(tensor2list(cat_slot_correctness),
-                             noncat_slot_correctness,
-                             tensor2list(cat_batch_ids),
-                             tensor2list(noncat_batch_ids),
-                             tensor2list(active_cat_slots),
-                             tensor2list(active_noncat_slots))
+#     metrics = get_average_and_joint_goal_accuracy(tensor2list(cat_slot_correctness),
+#                              noncat_slot_correctness,
+#                              tensor2list(cat_batch_ids),
+#                              tensor2list(noncat_batch_ids),
+#                              tensor2list(active_cat_slots),
+#                              tensor2list(active_noncat_slots))
 
 
-    global_vars['average_and_joint_goal_accuracy'].extend(metrics)
+#     global_vars['average_and_joint_goal_accuracy'].extend(metrics)
 
 def get_average_and_joint_goal_accuracy(cat_slot_correctness,
                              noncat_slot_correctness,

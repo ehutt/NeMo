@@ -1445,13 +1445,17 @@ class SGDDataLayer(TextDataLayer):
 
         """
         return {
-            "user_utterance": NeuralType ({
+            "example_id":NeuralType ({
+                0: AxisType(BatchTag)
+            }),
+            "service_id": NeuralType ({
                 0: AxisType(BatchTag)
             }),
             "is_real_example":NeuralType ({
                 0: AxisType(BatchTag)
             }),
-            "service_id": NeuralType ({
+
+            "user_utterance": NeuralType ({
                 0: AxisType(BatchTag)
             }),
             "utterance_ids": NeuralType({
@@ -1466,6 +1470,7 @@ class SGDDataLayer(TextDataLayer):
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag)
             }),
+
             "num_categorical_slots": NeuralType ({
                 0: AxisType(BatchTag)
             }),
@@ -1481,6 +1486,7 @@ class SGDDataLayer(TextDataLayer):
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag)
             }),
+
             "num_noncategorical_slots": NeuralType ({
                 0: AxisType(BatchTag)
             }),
@@ -1504,6 +1510,7 @@ class SGDDataLayer(TextDataLayer):
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag)
             }),
+
             "num_slots": NeuralType ({
                 0:AxisType(BatchTag)
             }),
@@ -1511,12 +1518,14 @@ class SGDDataLayer(TextDataLayer):
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag)
             }),
+
             "num_intents": NeuralType ({
                 0:AxisType(BatchTag)
             }),
             "intent_status": NeuralType ({
                 0:AxisType(BatchTag)
             }),
+            
             "cat_slot_emb": NeuralType ({
                 0: AxisType(BatchTag),
                 1: AxisType(TimeTag),

@@ -238,6 +238,9 @@ eval_datalayer = nemo_nlp.SGDDataLayer(
 
 # Encode the utterances using BERT
 eval_data = eval_datalayer()
+# import pdb; pdb.set_trace()
+# eval_datalayer.dataset[0]
+
 print (len(eval_datalayer))
 eval_token_embeddings = pretrained_bert_model(input_ids=eval_data.utterance_ids,
                                          attention_mask=eval_data.utterance_mask,
@@ -265,7 +268,10 @@ eval_logit_noncat_slot_end = model(encoded_utterance=eval_encoded_utterance,
 
 train_tensors = [loss]
 
-eval_tensors = [eval_data.user_utterance,
+eval_tensors = [eval_data.example_id,
+                eval_data.service_id, 
+                eval_data.is_real_example,
+                eval_data.user_utterance,
                 eval_data.start_char_idx,
                 eval_data.end_char_idx,
                 eval_logit_intent_status,
