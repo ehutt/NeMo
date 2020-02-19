@@ -6,6 +6,8 @@ import collections
 import nemo_nlp
 import nemo_nlp.data.datasets.sgd.data_utils as data_utils
 import nemo_nlp.data.datasets.sgd.prediction_utils as pred_utils
+from nemo_nlp.data.datasets.sgd.evaluate import *
+
 import numpy as np
 import torch
 from fuzzywuzzy import fuzz
@@ -151,6 +153,59 @@ def combine_predictions_in_example(predictions,
             #     examples_preds[i][k] = v[i]
 
     return examples_preds
+
+
+def eval_epochs_done_callback(global_vars,
+                              input_json_files,
+                              schema_json_file,
+                              prediction_dir,
+                              data_dir,
+                              eval_dataset,
+                              output_metric_file):
+    
+    pred_utils.write_predictions_to_file(global_vars['predictions'],
+                                         input_json_files,
+                                         schema_json_file,
+                                         prediction_dir)
+
+    metrics = evaluate(prediction_dir,
+                       data_dir,
+                       eval_dataset,
+                       output_metric_file)
+    return metrics
+
+
+def evaluate(prediction_dir,
+             data_dir,
+             eval_dataset,
+             output_metric_file):
+
+
+    in_domain_services = get_in_domain_services(
+        os.path.join(data_dir, eval_dataset, "schema.json"),
+        os.path.join(data_dir, "train", "schema.json"))
+
+    with open(os.path.join(data_dir, eval_dataset, "schema.json")) as f:
+        eval_services = {}
+        list_services = json.load(f)
+        for service in list_services:
+            eval_services[service["service_name"]] = service
+
+    dataset_ref = get_dataset_as_dict(os.path.join(data_dir, eval_dataset, "dialogues_*.json"))
+    dataset_hyp = get_dataset_as_dict(os.path.join(prediction_dir, "*.json"))
+
+    all_metric_aggregate, _ = get_metrics(dataset_ref, dataset_hyp, eval_services, in_domain_services)
+    nemo.logging.info(f'Dialog metrics: {all_metric_aggregate[ALL_SERVICES]}')
+
+    # Write the aggregated metrics values.
+    with open(output_metric_file, "w") as f:
+        json.dump(all_metric_aggregate, f, indent=2, separators=(",", ": "), sort_keys=True)
+    # Write the per-frame metrics values with the corrresponding dialogue frames.
+    with open(os.path.join(prediction_dir, PER_FRAME_OUTPUT_FILENAME), "w") as f:
+        json.dump(dataset_hyp, f, indent=2, separators=(",", ": "))
+    return all_metric_aggregate
+
+
 
 
 # def eval_iter_callback(tensors, global_vars):
@@ -521,15 +576,10 @@ def get_batch_ids(slot_status_mask):
 
 
 
-def eval_epochs_done_callback(global_vars,
+def OLD_eval_epochs_done_callback(global_vars,
                               input_json_files,
                               schema_json_file,
                               prediction_dir):
-    
-    pred_utils.write_predictions_to_file(global_vars['predictions'],
-                                         input_json_files,
-                                         schema_json_file,
-                                         prediction_dir)
 
     active_intent_labels = np.asarray(global_vars['active_intent_labels'])
     active_intent_preds = np.asarray(global_vars['active_intent_preds'])

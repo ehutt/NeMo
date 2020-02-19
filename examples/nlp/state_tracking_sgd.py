@@ -45,8 +45,6 @@ parser.add_argument("--pretrained_model_name", default="bert-large-cased", type=
                     help="Pretrained BERT model")
 
 # Hyperparameters and optimization related flags.
-parser.add_argument("--num_epochs", default=80, type=int,
-                    help="Number of epochs for training")
 parser.add_argument("--optimizer_kind", default="adam", type=str)
 parser.add_argument("--train_batch_size", default=32, type=int,
                     help="Total batch size for training.")
@@ -57,7 +55,7 @@ parser.add_argument("--predict_batch_size", default=8, type=int,
 parser.add_argument("--learning_rate", default=1e-4, type=float, 
                     help="The initial learning rate for Adam.")
 parser.add_argument("--lr_policy", default="WarmupAnnealing", type=str)
-parser.add_argument("--num_train_epochs", default=80.0, type=int,
+parser.add_argument("--num_epochs", default=80.0, type=int,
                     help="Total number of training epochs to perform.")
 parser.add_argument("--lr_warmup_proportion", default=0.1, type=float,
                     help="Proportion of training to perform linear learning rate warmup for. "
@@ -110,11 +108,11 @@ vocab_file = os.path.join(args.bert_ckpt_dir, "vocab.txt")
 if not os.path.exists(vocab_file):
     raise ValueError('vocab_file.txt not found at {args.bert_ckpt_dir}')
 
-work_dir = f'{args.work_dir}/{args.task_name.upper()}'
+args.work_dir = f'{args.work_dir}/{args.task_name.upper()}'
 nf = nemo.core.NeuralModuleFactory(backend=nemo.core.Backend.PyTorch,
                                    local_rank=args.local_rank,
                                    optimization_level=args.amp_opt_level,
-                                   log_dir=work_dir,
+                                   log_dir=args.work_dir,
                                    create_tb_writer=True,
                                    files_to_copy=[__file__],
                                    add_time_to_log_dir=True)
@@ -317,14 +315,20 @@ schema_json_file = os.path.join(args.data_dir, args.eval_dataset, 'schema.json')
     
 # Write predictions to file in DSTC8 format.
 prediction_dir = os.path.join(args.work_dir, 'predictions', 'pred_res_{}_{}'.format(args.eval_dataset, args.task_name))
-
+output_metric_file = os.path.join(args.work_dir, 'metrics.txt')
 if not os.path.exists(prediction_dir):
     os.makedirs(prediction_dir)
 
 eval_callback = nemo.core.EvaluatorCallback(
     eval_tensors=eval_tensors,
     user_iter_callback=lambda x, y: eval_iter_callback(x, y),
-    user_epochs_done_callback=lambda x: eval_epochs_done_callback(x, input_json_files, schema_json_file, prediction_dir),
+    user_epochs_done_callback=lambda x: eval_epochs_done_callback(x,
+                                                                  input_json_files,
+                                                                  schema_json_file,
+                                                                  prediction_dir,
+                                                                  args.data_dir,
+                                                                  args.eval_dataset,
+                                                                  output_metric_file),
     tb_writer=nf.tb_writer,
     eval_step=steps_per_epoch)
 
