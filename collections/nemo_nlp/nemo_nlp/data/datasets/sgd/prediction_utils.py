@@ -24,6 +24,7 @@ import collections
 import json
 import os
 
+import nemo
 from nemo_nlp.data.datasets.sgd import schema, data_utils
 
 
@@ -87,8 +88,7 @@ def get_predicted_dialog(dialog, all_predictions, schemas):
             slot_values[slot] = data_utils.STR_DONTCARE
           elif slot_status == data_utils.STATUS_ACTIVE:
             value_idx = predictions["cat_slot_value"][slot_idx]
-            slot_values[slot] = (
-                service_schema.get_categorical_slot_values(slot)[value_idx])
+            slot_values[slot] = (service_schema.get_categorical_slot_values(slot)[value_idx])
         # Non-categorical slots.
         for slot_idx, slot in enumerate(service_schema.non_categorical_slots):
           slot_status = predictions["noncat_slot_status"][slot_idx]
@@ -113,7 +113,9 @@ def get_predicted_dialog(dialog, all_predictions, schemas):
   return dialog
 
 
-def write_predictions_to_file(predictions, input_json_files, schema_json_file,
+def write_predictions_to_file(predictions,
+                              input_json_files,
+                              schema_json_file,
                               output_dir):
   """Write the predicted dialogues as json files.
 
@@ -125,28 +127,28 @@ def write_predictions_to_file(predictions, input_json_files, schema_json_file,
     schema_json_file: Path for the json file containing the schemas.
     output_dir: The directory where output json files will be created.
   """
-  tf.compat.v1.logging.info("Writing predictions to %s.", output_dir)
+  nemo.logging.info("Writing predictions to %s.", output_dir)
   schemas = schema.Schema(schema_json_file)
   # Index all predictions.
   all_predictions = {}
   for idx, prediction in enumerate(predictions):
-    if not prediction["is_real_example"]:
-      continue
-    tf.compat.v1.logging.log_every_n(
-        tf.compat.v1.logging.INFO, "Processed %d examples.", 500, idx)
-    _, dialog_id, turn_id, service_name = (
-        prediction["example_id"].decode("utf-8").split("-"))
-    all_predictions[(dialog_id, turn_id, service_name)] = prediction
+      if not prediction["is_real_example"]:
+          continue
+      if idx % 100 == 0:
+        nemo.logging.info(f'Processed {idx} examples')
+      _, dialog_id, turn_id, service_name = (prediction['example_id'].split('-'))
+      all_predictions[(dialog_id, turn_id, service_name)] = prediction
 
   # Read each input file and write its predictions.
   for input_file_path in input_json_files:
-    with tf.io.gfile.GFile(input_file_path) as f:
-      dialogs = json.load(f)
-      pred_dialogs = []
-      for d in dialogs:
-        pred_dialogs.append(get_predicted_dialog(d, all_predictions, schemas))
-    input_file_name = os.path.basename(input_file_path)
-    output_file_path = os.path.join(output_dir, input_file_name)
-    with tf.io.gfile.GFile(output_file_path, "w") as f:
-      json.dump(
-          pred_dialogs, f, indent=2, separators=(",", ": "), sort_keys=True)
+      with open(input_file_path) as f:
+          dialogs = json.load(f)
+          nemo.logging.info(f'{input_file_path} file is loaded')
+          pred_dialogs = []
+          for d in dialogs:
+              # import pdb; pdb.set_trace()
+              pred_dialogs.append(get_predicted_dialog(d, all_predictions, schemas))
+      input_file_name = os.path.basename(input_file_path)
+      output_file_path = os.path.join(output_dir, input_file_name)
+      with open(output_file_path, "w") as f:
+          json.dump(pred_dialogs, f, indent=2, separators=(",", ": "), sort_keys=True)

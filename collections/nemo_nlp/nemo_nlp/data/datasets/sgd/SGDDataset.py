@@ -58,7 +58,7 @@ class SGDDataset(Dataset):
         ex = self.features[idx]
 
         service_id = ex.service_schema.service_id
-        return (np.array(idx),
+        return (ex.example_id,
                 np.array(service_id),
                 np.array(ex.is_real_example),
 
