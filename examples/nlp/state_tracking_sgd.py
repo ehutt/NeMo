@@ -60,8 +60,7 @@ parser.add_argument("--num_epochs", default=80.0, type=int,
 parser.add_argument("--lr_warmup_proportion", default=0.1, type=float,
                     help="Proportion of training to perform linear learning rate warmup for. "
                     "E.g., 0.1 = 10% of training.")
-parser.add_argument("--save_epoch_freq", default=1, type=int)
-parser.add_argument("--save_step_freq", default=250, type=int,
+parser.add_argument("--save_epoch_freq", default=1, type=int,
                     help="How often to save the model checkpoint.")
 parser.add_argument("--local_rank", default=None, type=int)
 parser.add_argument("--amp_opt_level", default="O0",
@@ -334,8 +333,7 @@ eval_callback = nemo.core.EvaluatorCallback(
 
 ckpt_callback = nemo.core.CheckpointCallback(
     folder=nf.checkpoint_dir,
-    epoch_freq=args.save_epoch_freq,
-    step_freq=args.save_step_freq)
+    epoch_freq=args.save_epoch_freq)
 
 lr_policy_fn = get_lr_policy(args.lr_policy,
                              total_steps=args.num_epochs * steps_per_epoch,
@@ -343,8 +341,8 @@ lr_policy_fn = get_lr_policy(args.lr_policy,
 
 nf.train(tensors_to_optimize=[loss],
          callbacks=[train_callback, 
-         eval_callback
-         ],
+         eval_callback,
+         ckpt_callback],
          lr_policy=lr_policy_fn,
          optimizer=args.optimizer_kind,
          optimization_params={"num_epochs": args.num_epochs,
