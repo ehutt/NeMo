@@ -35,3 +35,8 @@ python -m unittest tests/*.py
 # sphinx.errors.ThemeError: sphinx_rtd_theme is no longer a hard dependency since version 1.4.0. Please install it manually.(pip install sphinx_rtd_theme)
 pip install sphinx_rtd_theme
 ```
+
+Get SQuad Datasets 
+```
+python NeMo/examples/nlp/question_answering/get_squad.py --destDir data
+```
