@@ -92,6 +92,8 @@ parser.add_argument("--no_shuffle", action="store_false",
 parser.add_argument("--eval_dataset", type=str, default="dev",
                     choices=["dev", "test"],
                     help="Dataset split for evaluation.")
+parser.add_argument("--ckpt_save_freq", type=int, default=1000,
+                    help="How often to save checkpoints")
 
 args = parser.parse_args()
 
@@ -286,7 +288,8 @@ train_callback = nemo.core.SimpleLossLoggerCallback(
     tensors=train_tensors,
     print_func=lambda x: nemo.logging.info("Loss: {:.3f}".format(x[0].item())),
     get_tb_values=lambda x: [["loss", x[0]]],
-    tb_writer=nf.tb_writer)
+    tb_writer=nf.tb_writer,
+    step_freq=args.ckpt_save_freq)
 
 
 # we'll write predictions to file in DSTC8 format during evaluation callback
@@ -317,7 +320,7 @@ eval_callback = nemo.core.EvaluatorCallback(
 
 ckpt_callback = nemo.core.CheckpointCallback(
     folder=nf.checkpoint_dir,
-    epoch_epoch=1)
+    step_freq=args.ckpt_save_freq)
 
 lr_policy_fn = get_lr_policy(args.lr_policy,
                              total_steps=args.num_epochs * steps_per_epoch,
