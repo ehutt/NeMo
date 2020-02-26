@@ -29,7 +29,7 @@ import re
 import collections
 
 from nemo.utils.exp_logging import get_logger
-from nemo_nlp.data.datasets.sgd import tokenization, schema
+from nemo_nlp.data.datasets.sgd import schema
 
 # Dimension of the embedding for intents, slots and categorical slot values in
 # the schema. Should be equal to BERT's hidden_size.
@@ -83,8 +83,6 @@ class Dstc8DataProcessor(object):
     def __init__(self,
                  task_name,
                  dstc8_data_dir,
-                 vocab_file,
-                 do_lower_case,
                  tokenizer,
                  max_seq_length,
                  log_data_warnings
@@ -262,7 +260,7 @@ class Dstc8DataProcessor(object):
             during inference to map word-piece indices to spans in the original
             utterance.
         """
-        utterance = tokenization.convert_to_unicode(utterance)
+        # utterance = tokenization.convert_to_unicode(utterance)
 
         # After _naive_tokenize, spaces and punctuation marks are all retained, i.e.
         # direct concatenation of all the tokens in the sequence will be the
@@ -277,7 +275,7 @@ class Dstc8DataProcessor(object):
         bert_tokens_end_chars = []
         for token in tokens:
             if token.strip():
-                subwords = self._tokenizer.tokenize(token)
+                subwords = self._tokenizer.text_to_tokens(token)
                 # Store the alignment for the index of starting character and the
                 # inclusive ending character of the token.
                 alignments[char_index] = len(bert_tokens)
@@ -529,7 +527,7 @@ class InputExample(object):
         start_char_idx.append(0)
         end_char_idx.append(0)
 
-        utterance_ids = self._tokenizer.convert_tokens_to_ids(utt_subword)
+        utterance_ids = self._tokenizer.tokens_to_ids(utt_subword)
        
         # Zero-pad up to the BERT input sequence length.
         while len(utterance_ids) < max_utt_len:

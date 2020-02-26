@@ -16,10 +16,6 @@
 """Extract BERT embeddings for slots, values, intents in schema."""
 # Modified from bert.extract_features
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import collections
 import re
 
@@ -27,7 +23,6 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from . import data_utils
-from . import tokenization
 from . import schema
 
 # Separator to separate the two sentences in BERT's input sequence.
@@ -72,14 +67,14 @@ class SchemaEmbeddingDataset(Dataset):
                 np.array(self.features['input_type_ids'][idx]))
 
     def _create_feature(self,
-                        input_line,
+                        line,
                         embedding_tensor_name,
                         service_id,
                         intent_or_slot_id,
                         value_id=-1):
       """Create a single InputFeatures instance."""
       seq_length = self._max_seq_length
-      line = tokenization.convert_to_unicode(input_line)
+      # line = tokenization.convert_to_unicode(input_line)
       line = line.strip()
       text_a = None
       text_b = None
@@ -90,10 +85,10 @@ class SchemaEmbeddingDataset(Dataset):
         text_a = m.group(1)
         text_b = m.group(2)
 
-      tokens_a = self._tokenizer.tokenize(text_a)
+      tokens_a = self._tokenizer.text_to_tokens(text_a)
       tokens_b = None
       if text_b:
-        tokens_b = self._tokenizer.tokenize(text_b)
+        tokens_b = self._tokenizer.text_to_tokens(text_b)
 
       if tokens_b:
         # Modifies `tokens_a` and `tokens_b` in place so that the total
@@ -140,7 +135,7 @@ class SchemaEmbeddingDataset(Dataset):
         tokens.append("[SEP]")
         input_type_ids.append(1)
 
-      input_ids = self._tokenizer.convert_tokens_to_ids(tokens)
+      input_ids = self._tokenizer.tokens_to_ids(tokens)
 
       # The mask has 1 for real tokens and 0 for padding tokens. Only real
       # tokens are attended to.

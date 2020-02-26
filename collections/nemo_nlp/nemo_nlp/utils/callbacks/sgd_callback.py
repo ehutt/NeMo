@@ -193,7 +193,7 @@ def evaluate(prediction_dir,
 
     dataset_ref = get_dataset_as_dict(os.path.join(data_dir, eval_dataset, "dialogues_*.json"))
     dataset_hyp = get_dataset_as_dict(os.path.join(prediction_dir, "*.json"))
-
+    
     all_metric_aggregate, _ = get_metrics(dataset_ref, dataset_hyp, eval_services, in_domain_services)
     nemo.logging.info(f'Dialog metrics: {all_metric_aggregate[ALL_SERVICES]}')
 

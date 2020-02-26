@@ -15,7 +15,6 @@ import nemo
 import nemo_nlp
 import nemo_nlp.data.datasets.sgd.data_utils as data_utils
 import nemo_nlp.data.datasets.sgd.sgd_preprocessing as utils
-from nemo_nlp.data.datasets.sgd import tokenization
 from nemo_nlp.utils.callbacks.sgd_callback import \
     eval_iter_callback, eval_epochs_done_callback
 from nemo.utils.lr_policies import get_lr_policy
@@ -29,19 +28,19 @@ parser = argparse.ArgumentParser(description='Schema_guided_dst')
 parser.add_argument("--bert_ckpt_dir", default=None, type=str,
                     required=True,
                     help="Directory containing pre-trained BERT checkpoint.")
-parser.add_argument("--do_lower_case", default=False, type=bool,
-                    help="Whether to lower case the input text. Should be True for uncased "
-                    "models and False for cased models.")
-parser.add_argument("--preserve_unused_tokens", default=False, type=bool,
-                    help="If preserve_unused_tokens is True, Wordpiece tokenization will not "
-                    "be applied to words in the vocab.")
+# parser.add_argument("--do_lower_case", action="store_true",
+#                     help="Whether to lower case the input text. Should be True for uncased "
+#                     "models and False for cased models.")
+# parser.add_argument("--preserve_unused_tokens", default=False, type=bool,
+#                     help="If preserve_unused_tokens is True, Wordpiece tokenization will not "
+#                     "be applied to words in the vocab.")
 parser.add_argument("--max_seq_length", default=80, type=int,
                     help="The maximum total input sequence length after WordPiece tokenization. "
                     "Sequences longer than this will be truncated, and sequences shorter "
                     "than this will be padded.")
 parser.add_argument("--dropout", default=0.1, type=float,
                     help="Dropout rate for BERT representations.")
-parser.add_argument("--pretrained_model_name", default="bert-large-cased", type=str,
+parser.add_argument("--pretrained_model_name", default="bert-base-cased", type=str,
                     help="Pretrained BERT model")
 
 # Hyperparameters and optimization related flags.
@@ -88,24 +87,16 @@ parser.add_argument("--dialogues_example_dir", type=str, required=True,
                     help="Directory where preprocessed DSTC8 dialogues are stored.")
 parser.add_argument("--overwrite_dial_files", action="store_true",
                     help="Whether to generate a new file saving the dialogue examples.")
-parser.add_argument("--shuffle", type=bool, default=False,
+parser.add_argument("--no_shuffle", action="store_false",
                     help="Whether to shuffle training data")
 parser.add_argument("--eval_dataset", type=str, default="dev",
                     choices=["dev", "test"],
                     help="Dataset split for evaluation.")
-parser.add_argument("--eval_freq", type=int, default=1000,
-                    help="Hoow often to run evaluation")
 
 args = parser.parse_args()
 
 if not os.path.exists(args.data_dir):
     raise ValueError('Data not found at {args.data_dir}')
-
-task_name = args.task_name
-vocab_file = os.path.join(args.bert_ckpt_dir, "vocab.txt")
-
-if not os.path.exists(vocab_file):
-    raise ValueError('vocab_file.txt not found at {args.bert_ckpt_dir}')
 
 args.work_dir = f'{args.work_dir}/{args.task_name.upper()}'
 nf = nemo.core.NeuralModuleFactory(backend=nemo.core.Backend.PyTorch,
@@ -117,20 +108,15 @@ nf = nemo.core.NeuralModuleFactory(backend=nemo.core.Backend.PyTorch,
                                    add_time_to_log_dir=True)
 
 
-bert_init_ckpt = os.path.join(args.bert_ckpt_dir, "bert_model.ckpt")
+bert_init_ckpt = os.path.join(args.bert_ckpt_dir, "BERT-base-cased.pt")
 
 pretrained_bert_model = nemo_nlp.huggingface.BERT(
     pretrained_model_name=args.pretrained_model_name, factory=nf)
-# hidden_size = pretrained_bert_model.local_parameters["hidden_size"]
 
-tokenization.validate_case_matches_checkpoint(
-  do_lower_case=args.do_lower_case, init_checkpoint=bert_init_ckpt)
+pretrained_bert_model.restore_from(bert_init_ckpt)
 
 # BERT tokenizer
-tokenizer = tokenization.FullTokenizer(
-    vocab_file=vocab_file,
-    do_lower_case=args.do_lower_case,
-    preserve_unused_tokens=args.preserve_unused_tokens)
+tokenizer = nemo_nlp.data.NemoBertTokenizer(pretrained_model=args.pretrained_model_name)
 
 # Run SGD preprocessor to generate and store schema embeddings
 schema_preprocessor = utils.SchemaPreprocessor(
@@ -146,10 +132,8 @@ schema_preprocessor = utils.SchemaPreprocessor(
 
 # Dstc8Data
 dialogues_processor = data_utils.Dstc8DataProcessor(
-                task_name,
+                args.task_name,
                 args.data_dir,
-                vocab_file=vocab_file,
-                do_lower_case=args.do_lower_case,
                 tokenizer=tokenizer,
                 max_seq_length=args.max_seq_length,
                 log_data_warnings=False)
@@ -162,7 +146,7 @@ train_datalayer = nemo_nlp.SGDDataLayer(
     schema_emb_processor=schema_preprocessor,
     dialogues_processor=dialogues_processor,
     batch_size=args.train_batch_size,
-    shuffle=args.shuffle,)
+    shuffle=not args.no_shuffle)
 
 # fix
 bert_config = os.path.join(args.bert_ckpt_dir, 'bert_config.json')
@@ -333,7 +317,7 @@ eval_callback = nemo.core.EvaluatorCallback(
 
 ckpt_callback = nemo.core.CheckpointCallback(
     folder=nf.checkpoint_dir,
-    epoch_freq=args.save_epoch_freq)
+    epoch_epoch=1)
 
 lr_policy_fn = get_lr_policy(args.lr_policy,
                              total_steps=args.num_epochs * steps_per_epoch,
