@@ -49,14 +49,17 @@ To run only evaluation on pretrained question answering checkpoints on 1 GPU wit
 ```
 cd NeMo/examples/nlp/question_answering
 eval_file=/home/ubuntu/data/squad/v2.0/dev-v2.0.json
-model_dir=/home/ubuntu/models/bert-large-uncased_ckpt
+model_dir=/home/ubuntu/models/squadv2.0_roberta-large_from_huggingface_ckpt
+model_name=roberta-large #see options below 
 
 python question_answering_squad.py \
 --eval_file $eval_file \
---pretrained_model_name bert-large-uncased \
+--pretrained_model_name $model_name \
 --checkpoint_dir $model_dir \
 --do_lower_case \
---mode eval
+--version_2_with_negative \
+--mode eval \
+--no_data_cache
 ```
 
 Pretrained Model Name Options: 
