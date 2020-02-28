@@ -62,8 +62,53 @@ python question_answering_squad.py \
 --no_data_cache
 ```
 
+To fine-tune on SQuad 2.0 
+```
+cd examples/nlp/question_answering
+data_dir=/home/ubuntu/data/squad/v2.0
+checkpoint=/home/ubuntu/models/bert-large-uncased_ckpt/bert_large_uncased.pt
+bert_config=/home/ubuntu/models/bert-large-uncased_ckpt/bert_config.json
+
+python question_answering_squad.py \
+--data_dir=$data_dir \
+--bert_checkpoint=$checkpoint \
+--bert_config=$bert_config \
+--batch_size 24 \
+--save_step_freq 200 \
+--num_gpus 1 \
+--num_epochs 2 \
+--lr_policy WarmupAnnealing \
+--lr_warmup_proportion 0.0 \
+--optimizer adam_w \
+--weight_decay 0.0 \
+--lr 3e-5 \
+--do_lower_case \
+--version_2_with_negative \
+--no_data_cache 
+```
+
 Pretrained Model Name Options: 
 ```
 --pretrained_model_name {albert-base-v1,albert-large-v1,albert-xlarge-v1,albert-xxlarge-v1,albert-base-v2,albert-large-v2,albert-xlarge-v2,albert-xxlarge-v2,roberta-base,roberta-large,roberta-large-mnli,distilroberta-base,roberta-base-openai-detector,roberta-large-openai-detector,bert-base-uncased,bert-large-uncased,bert-base-cased,bert-large-cased,bert-base-multilingual-uncased,bert-base-multilingual-cased,bert-base-chinese,bert-base-german-cased,bert-large-uncased-whole-word-masking,bert-large-cased-whole-word-masking,bert-large-uncased-whole-word-masking-finetuned-squad,bert-large-cased-whole-word-masking-finetuned-squad,bert-base-cased-finetuned-mrpc,bert-base-german-dbmdz-cased,bert-base-german-dbmdz-uncased,bert-base-japanese,bert-base-japanese-whole-word-masking,bert-base-japanese-char,bert-base-japanese-char-whole-word-masking,bert-base-finnish-cased-v1,bert-base-finnish-uncased-v1,bert-base-dutch-cased}]
 ```
 
+## Model comparison 
+
+| BERT Variation | Size | # Parameters | SQuad Version | Accuracy | F1 |
+|----------------|-------|--------------|----------------|--------|---|
+| Roberta | Large | 355M | SQuad 2.0 | 84.09 | 87.13 | 
+| BERT | Large | 340M | SQuad 2.0 | 82.57 | 89.80 | 
+| Albert v2 | Large | ? | SQuad 2.0 | 81.79 | 85.06 | 
+
+### SQuad 1.1 Fine-Tuned Model Checkpoints 
+* Albert 
+  * XL v2 
+  * Large v2 
+  * Base v2 
+* Roberta 
+  * Large 
+  * Base 
+* BERT 
+  * Large, uncased 
+  * Base, uncased 
+  * Based, cased 
