@@ -65,12 +65,14 @@ python question_answering_squad.py \
 To fine-tune on SQuad 2.0 
 ```
 cd examples/nlp/question_answering
-data_dir=/home/ubuntu/data/squad/v2.0
+train_file=/home/ubuntu/data/squad/v2.0/train-v2.0.json
+eval_file=/home/ubuntu/data/squad/v2.0/dev-v2.0.json
 checkpoint=/home/ubuntu/models/bert-large-uncased_ckpt/bert_large_uncased.pt
 bert_config=/home/ubuntu/models/bert-large-uncased_ckpt/bert_config.json
 
 python question_answering_squad.py \
---data_dir=$data_dir \
+--train_file $train_file \
+--eval_file $eval_file \
 --bert_checkpoint=$checkpoint \
 --bert_config=$bert_config \
 --batch_size 24 \
@@ -83,6 +85,7 @@ python question_answering_squad.py \
 --weight_decay 0.0 \
 --lr 3e-5 \
 --do_lower_case \
+--mode train_eval \
 --version_2_with_negative \
 --no_data_cache 
 ```
