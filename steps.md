@@ -69,12 +69,14 @@ train_file=/home/ubuntu/data/squad/v2.0/train-v2.0.json
 eval_file=/home/ubuntu/data/squad/v2.0/dev-v2.0.json
 checkpoint=/home/ubuntu/models/bert-large-uncased_ckpt/bert_large_uncased.pt
 bert_config=/home/ubuntu/models/bert-large-uncased_ckpt/bert_config.json
+model_name=bert-large-uncased
 
 python question_answering_squad.py \
 --train_file $train_file \
 --eval_file $eval_file \
 --bert_checkpoint=$checkpoint \
 --bert_config=$bert_config \
+--pretrained_model_name $model_name \
 --batch_size 24 \
 --save_step_freq 200 \
 --num_gpus 1 \
