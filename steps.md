@@ -62,24 +62,24 @@ python question_answering_squad.py \
 --no_data_cache
 ```
 
-To fine-tune on SQuad 2.0 
+To finetune Squad v2.0 on pretrained BERT large uncased on 1 GPU:
 ```
-cd examples/nlp/question_answering
+mkdir tune_output
+
+tune_out_dir=tune_output
 train_file=/home/ubuntu/data/squad/v2.0/train-v2.0.json
 eval_file=/home/ubuntu/data/squad/v2.0/dev-v2.0.json
 checkpoint=/home/ubuntu/models/bert-large-uncased_ckpt/bert_large_uncased.pt
-bert_config=/home/ubuntu/models/bert-large-uncased_ckpt/bert_config.json
 model_name=bert-large-uncased
 
 python question_answering_squad.py \
 --train_file $train_file \
 --eval_file $eval_file \
---bert_checkpoint=$checkpoint \
---bert_config=$bert_config \
+--work_dir $tune_out_dir \
 --pretrained_model_name $model_name \
+--bert_checkpoint $checkpoint \ 
+--amp_opt_level "O1" \
 --batch_size 24 \
---save_step_freq 200 \
---num_gpus 1 \
 --num_epochs 2 \
 --lr_policy WarmupAnnealing \
 --lr_warmup_proportion 0.0 \
@@ -88,9 +88,9 @@ python question_answering_squad.py \
 --lr 3e-5 \
 --do_lower_case \
 --mode train_eval \
---version_2_with_negative \
---no_data_cache 
+--version_2_with_negative 
 ```
+
 
 Pretrained Model Name Options: 
 ```
