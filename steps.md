@@ -88,7 +88,8 @@ python question_answering_squad.py \
 --lr 3e-5 \
 --do_lower_case \
 --mode train_eval \
---version_2_with_negative 
+--version_2_with_negative \
+--no_data_cache
 ```
 
 
