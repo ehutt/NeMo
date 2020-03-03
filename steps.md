@@ -77,7 +77,7 @@ python question_answering_squad.py \
 --eval_file $eval_file \
 --work_dir $tune_out_dir \
 --pretrained_model_name $model_name \
---bert_checkpoint $checkpoint \ 
+--bert_checkpoint $checkpoint \
 --amp_opt_level "O1" \
 --batch_size 24 \
 --num_epochs 2 \
