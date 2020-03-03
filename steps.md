@@ -94,6 +94,30 @@ python question_answering_squad.py \
 --no_data_cache
 ```
 
+
+To finetune Squad v2.0 on pretrained BERT large uncased on 4 GPU:
+```
+python -m torch.distributed.launch --nproc_per_node=4 question_answering_squad.py \
+--amp_opt_level "O1" \
+--train_file $train_file \
+--eval_file $eval_file \
+--work_dir $tune_out_dir \
+--pretrained_model_name $model_name \
+--bert_checkpoint $checkpoint \
+--batch_size 6 \
+--num_gpus 4 \
+--num_epochs 2 \
+--lr_policy WarmupAnnealing \
+--lr_warmup_proportion 0.0 \
+--optimizer adam_w \
+--weight_decay 0.0 \
+--lr 3e-5 \
+--mode train_eval \
+--do_lower_case \
+--version_2_with_negative \
+--no_data_cache
+```
+
 ### MNLI
 
 Download MNLI dataset 
