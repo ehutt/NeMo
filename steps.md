@@ -36,6 +36,8 @@ python -m unittest tests/*.py
 pip install sphinx_rtd_theme
 ```
 
+### SQuad
+
 Get SQuad Datasets 
 ```
 python NeMo/examples/nlp/question_answering/get_squad.py --destDir data
@@ -92,11 +94,27 @@ python question_answering_squad.py \
 --no_data_cache
 ```
 
+### MNLI
+
+Download MNLI dataset 
+``` 
+data_dir=/home/ubuntu/data/
+tasks="MNLI,SNLI,QNLI,RTE,WNLI"
+
+python download_glue_data.py --data_dir $data_dir --tasks $tasks
+```
+To fine-tune
+
+
+
 
 Pretrained Model Name Options: 
 ```
 --pretrained_model_name {albert-base-v1,albert-large-v1,albert-xlarge-v1,albert-xxlarge-v1,albert-base-v2,albert-large-v2,albert-xlarge-v2,albert-xxlarge-v2,roberta-base,roberta-large,roberta-large-mnli,distilroberta-base,roberta-base-openai-detector,roberta-large-openai-detector,bert-base-uncased,bert-large-uncased,bert-base-cased,bert-large-cased,bert-base-multilingual-uncased,bert-base-multilingual-cased,bert-base-chinese,bert-base-german-cased,bert-large-uncased-whole-word-masking,bert-large-cased-whole-word-masking,bert-large-uncased-whole-word-masking-finetuned-squad,bert-large-cased-whole-word-masking-finetuned-squad,bert-base-cased-finetuned-mrpc,bert-base-german-dbmdz-cased,bert-base-german-dbmdz-uncased,bert-base-japanese,bert-base-japanese-whole-word-masking,bert-base-japanese-char,bert-base-japanese-char-whole-word-masking,bert-base-finnish-cased-v1,bert-base-finnish-uncased-v1,bert-base-dutch-cased}]
 ```
+
+
+
 
 ## Model comparison 
 
